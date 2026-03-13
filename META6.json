@@ -1,0 +1,14 @@
+{
+  "name": "rakusk",
+  "description": "Raku-based x86 assembler for self-hosting OS bootstrap",
+  "version": "0.0.1",
+  "perl": "6.d",
+  "authors": [
+    "Cline"
+  ],
+  "depends": [],
+  "provides": {
+  },
+  "resources": [],
+  "source-url": "git@github.com:HobbyOSs/rakusk.git"
+}
