@@ -1,7 +1,12 @@
 {
+  "registers": {
+    "AL": 0, "CL": 1, "DL": 2, "BL": 3,
+    "AH": 4, "CH": 5, "DH": 6, "BH": 7
+  },
   "instructions": {
-    "HLT": { "opcode": "F4", "desc": "Halt" },
-    "CLI": { "opcode": "FA", "desc": "Clear Interrupt Flag" },
-    "STI": { "opcode": "FB", "desc": "Set Interrupt Flag" }
+    "HLT": { "type": "no-op", "opcode": "F4" },
+    "CLI": { "type": "no-op", "opcode": "FA" },
+    "STI": { "type": "no-op", "opcode": "FB" },
+    "MOV": { "type": "reg-imm8", "base_opcode": "B0" }
   }
 }
