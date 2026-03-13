@@ -24,6 +24,15 @@ class Pass1 is export {
 
             # TODO: ラベルの収集 (現在は未実装)
 
+            # 動的なオペランド（$など）の解決
+            if $node.can('operands') {
+                for $node.operands.kv -> $i, $op {
+                    if $op eq '$' {
+                        $node.operands[$i] = $!pc;
+                    }
+                }
+            }
+
             if $node ~~ InstructionNode {
                 $!pc += $node.encode(%regs).elems;
             }
@@ -95,8 +104,7 @@ class AssemblerActions is export {
                     @operands.push($op_node<string_lit>.Str);
                 }
                 elsif $op_node<symbol_pc> {
-                    # TODO: $ の解決。現在はとりあえず0か何かを入れる
-                    @operands.push(0); 
+                    @operands.push('$'); # プレースホルダとして保持
                 }
             }
             make PseudoNode.new(
