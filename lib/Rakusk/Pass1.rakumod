@@ -3,8 +3,19 @@ unit module Rakusk::Pass1;
 use JSON::Fast;
 use Rakusk::AST;
 
-# 1. 外部データの読み込み（デフォルトパス）
 our $DEFAULT_INST_PATH = "data/instructions.json";
+
+class Pass1 is export {
+    has %.symbols;
+    has @.ast;
+    has Int $.pc = 0;
+
+    method evaluate($match) {
+        @!ast = $match.made;
+        # 将来的にここでラベルの収集やPCの計算を行う
+        return self;
+    }
+}
 
 class AssemblerActions is export {
     has %.REGS;
