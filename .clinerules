@@ -62,7 +62,8 @@ memory-bank/
     "/<Current Working Directory>/memory-bank/core/techContext.md",
     "/<Current Working Directory>/memory-bank/core/activeContext.md",
     "/<Current Working Directory>/memory-bank/core/progress.md",
-    "/<Current Working Directory>/memory-bank/core/rules_extras.md"
+    "/<Current Working Directory>/memory-bank/core/rules_extras.md",
+    "/<Current Working Directory>/memory-bank/docs/spec.md"
   ]
 }
 </if_tool_exists>
