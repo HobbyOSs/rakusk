@@ -1,0 +1,3 @@
+MOV AL, 0x12
+CLI
+HLT
