@@ -10,9 +10,27 @@ class Pass1 is export {
     has @.ast;
     has Int $.pc = 0;
 
-    method evaluate($match) {
+    method evaluate($match, %regs) {
         @!ast = $match.made;
-        # 将来的にここでラベルの収集やPCの計算を行う
+        
+        # パス1: ラベルの収集とPCの計算
+        $!pc = 0;
+        for @!ast -> $node {
+            # ORG 命令の特別な処理
+            if $node ~~ PseudoNode && $node.mnemonic eq 'ORG' {
+                $!pc = $node.operands[0];
+                next;
+            }
+
+            # TODO: ラベルの収集 (現在は未実装)
+
+            if $node ~~ InstructionNode {
+                $!pc += $node.encode(%regs).elems;
+            }
+            elsif $node ~~ PseudoNode {
+                $!pc += $node.encode($!pc).elems;
+            }
+        }
         return self;
     }
 }
@@ -56,18 +74,51 @@ class AssemblerActions is export {
         my $info = %!INST{$m};
         
         if $info<type> eq 'reg-imm8' {
-            my $ops = $<operand_list><operand>;
-            my $reg_name = $ops[0]<reg>.uc;
-            my $imm_str  = $ops[1]<imm>.Str;
-            my $imm_val  = $imm_str.starts-with('0x', :i) 
-                           ?? $imm_str.substr(2).parse-base(16) 
-                           !! $imm_str.parse-base(10);
+            my @ops = $<operand_list><operand>;
+            my $reg_name = @ops[0]<reg>.uc;
+            my $imm_val  = self.parse-imm(@ops[1]<imm>);
             
             make InstructionNode.new(
                 mnemonic => $m,
                 operands => [$reg_name, $imm_val],
                 info     => $info
             );
+        }
+        elsif $info<type> eq 'pseudo' {
+            my @ops_nodes = $<operand_list><operand>;
+            my @operands;
+            for @ops_nodes -> $op_node {
+                if $op_node<imm> {
+                    @operands.push(self.parse-imm($op_node<imm>));
+                }
+                elsif $op_node<string_lit> {
+                    @operands.push($op_node<string_lit>.Str);
+                }
+                elsif $op_node<symbol_pc> {
+                    # TODO: $ の解決。現在はとりあえず0か何かを入れる
+                    @operands.push(0); 
+                }
+            }
+            make PseudoNode.new(
+                mnemonic => $m,
+                operands => @operands
+            );
+        }
+    }
+
+    method parse-imm($imm_match) {
+        my $str = $imm_match.Str;
+        my $sign = 1;
+        if $str.starts-with('-') {
+            $sign = -1;
+            $str = $str.substr(1);
+        }
+
+        if $str.starts-with('0x', :i) {
+            return $sign * $str.substr(2).parse-base(16);
+        }
+        else {
+            return $sign * $str.parse-base(10);
         }
     }
 }

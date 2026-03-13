@@ -44,6 +44,12 @@
     "WAIT": { "type": "no-op", "opcode": "9B" },
     "WBINVD": { "type": "no-op", "opcode": "09" },
     "WRMSR": { "type": "no-op", "opcode": "30" },
-    "MOV": { "type": "reg-imm8", "base_opcode": "B0" }
+    "MOV": { "type": "reg-imm8", "base_opcode": "B0" },
+    "DB": { "type": "pseudo" },
+    "DW": { "type": "pseudo" },
+    "DD": { "type": "pseudo" },
+    "RESB": { "type": "pseudo" },
+    "ALIGNB": { "type": "pseudo" },
+    "ORG": { "type": "pseudo" }
   }
 }

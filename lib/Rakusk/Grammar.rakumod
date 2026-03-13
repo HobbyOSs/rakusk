@@ -48,9 +48,14 @@ grammar Assembler is export {
         <operand> [ \s* ',' \s* <operand> ]*
     }
 
-    token operand { <reg> | <imm> }
+    token operand { <reg> | <imm> | <string_lit> | <symbol_pc> }
     token reg     { :i @( %REGS_DATA.keys.sort({ $^b.chars <=> $^a.chars }) ) }
-    token imm     { :i [ '0x' <[0..9a..f]>+ | <[0..9]>+ ] }
+    token imm     { :i [ '-'? '0x' <[0..9a..f]>+ | '-'? <[0..9]>+ ] }
+    token string_lit {
+        | '"' <( [ [ \\ . ] | <-[ " ]> ]* )> '"'
+        | "'" <( [ [ \\ . ] | <-[ ' ]> ]* )> "'"
+    }
+    token symbol_pc { '$' }
 
     token comment { ';' \N* }
     token ws_only { <[ \t ]> }
