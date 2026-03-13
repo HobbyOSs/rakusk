@@ -1,0 +1,7 @@
+{
+  "instructions": {
+    "HLT": { "opcode": "F4", "desc": "Halt" },
+    "CLI": { "opcode": "FA", "desc": "Clear Interrupt Flag" },
+    "STI": { "opcode": "FB", "desc": "Set Interrupt Flag" }
+  }
+}
