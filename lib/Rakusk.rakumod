@@ -12,16 +12,18 @@ our sub assemble(Str $source) is export {
     my $data = from-json($DEFAULT_INST_PATH.IO.slurp);
     my %regs = $data<registers>;
 
-    # 2. Grammar と Actions の適用 (Pass 1)
+    # 2. Parse (AST構築)
     my $actions = AssemblerActions.new();
     my $match = Assembler.parse($source, :$actions);
     unless $match {
         die "Syntax error in assembly source";
     }
+    my @ast = $match.made;
 
-    my $pass1 = Pass1.new().evaluate($match, %regs);
+    # 3. Pass 1 (シンボル解決とPC計算)
+    my $pass1 = Pass1.new().evaluate(@ast, %regs);
 
-    # 3. Pass 2
-    my $pass2 = Pass2.new(:$pass1);
+    # 4. Pass 2 (バイナリ生成)
+    my $pass2 = Pass2.new(ast => $pass1.ast);
     return $pass2.assemble(%regs);
 }
