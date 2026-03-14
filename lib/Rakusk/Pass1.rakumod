@@ -295,12 +295,34 @@ class Pass1 is export {
 
         given %info<type> {
             when 'no-op' { return 1; }
-            when 'reg-imm8' { return 2; }
+            when 'reg-imm8' {
+                # reg8, imm8 -> 2 bytes (B0+r ib) or (80 /0 ib)
+                # reg16, imm8 -> 3 bytes (83 /0 ib)
+                return (%info<width> // 8) == 8 ?? 2 !! 3;
+            }
+            when 'short-imm' {
+                # opcode + imm8 (2 bytes) or opcode + imm16 (3 bytes)
+                return (%info<width> // 8) == 8 ?? 2 !! 3;
+            }
+            when 'reg-imm16' { return 3; }
             when 'imm8' { return 2; }
             when 'imm16' { return 3; }
             when 'imm32' { return 5; }
             when 'short-jump' { return 2; }
             when 'reg-reg' { return 2; }
+            when 'sreg-reg' | 'reg-sreg' { return 2; }
+            when 'reg-mem' | 'mem-reg' {
+                # 16-bit mode: opcode (1) + ModR/M (1) + displacement (0, 1, 2)
+                my $size = 2;
+                my $mem = $node.operands.grep(Memory)[0];
+                if $mem && $mem.disp {
+                    my $dv = self!eval-to-int($mem.disp, %env);
+                    if $dv != 0 {
+                        $size += ($dv.abs <= 127 ?? 1 !! 2);
+                    }
+                }
+                return $size;
+            }
         }
         return 0;
     }

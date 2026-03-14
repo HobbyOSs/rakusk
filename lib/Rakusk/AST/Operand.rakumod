@@ -6,7 +6,12 @@ unit module Rakusk::AST::Operand;
 
 class Register does Operand is export {
     has $.name;
+    has $.width;
+    has $.index;
     method Str { $!name }
+    method is-segment {
+        return $!name.uc ~~ /^(ES|CS|SS|DS|FS|GS)$/;
+    }
 }
 
 class Immediate does Operand is export {

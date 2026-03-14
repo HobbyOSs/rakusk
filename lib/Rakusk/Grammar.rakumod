@@ -16,6 +16,32 @@ for %INST_DATA.kv -> $key, $val {
     %MNEMONIC_MAP{$m.uc}.push($val);
 }
 
+# バリアントの優先順位付け: 特殊な（短い）命令を優先する
+for %MNEMONIC_MAP.kv -> $m, $variants {
+    %MNEMONIC_MAP{$m} = [ $variants.sort({
+        # 優先度スコア: 低いほど優先
+        # 1. pseudo (最優先)
+        # 2. short-imm
+        # 3. base_opcode を持つもの (MOV AX, imm 等)
+        # 4. その他
+        my $v_a = $^a;
+        my $v_b = $^b;
+        my $score_a = do {
+            if ($v_a<type> // '') eq 'pseudo' { 0 }
+            elsif ($v_a<type> // '') eq 'short-imm' { 1 }
+            elsif $v_a<base_opcode> { 2 }
+            else { 3 }
+        };
+        my $score_b = do {
+            if ($v_b<type> // '') eq 'pseudo' { 0 }
+            elsif ($v_b<type> // '') eq 'short-imm' { 1 }
+            elsif $v_b<base_opcode> { 2 }
+            else { 3 }
+        };
+        $score_a <=> $score_b;
+    }) ];
+}
+
 grammar Assembler is export {
     # 既存の ws をオーバーライドして、コメントも空白として扱う
     # ただし改行は文の区切りとして重要なので含めない
@@ -54,7 +80,8 @@ grammar Assembler is export {
     token reg { :i [ RAX|RBX|RCX|RDX|RSI|RDI|RBP|RSP|R8|R9|R10|R11|R12|R13|R14|R15
                 | EAX|EBX|ECX|EDX|ESI|EDI|EBP|ESP
                 | AX|BX|CX|DX|SI|DI|BP|SP
-                | AL|CL|DL|BL|AH|CH|DH|BH ] }
+                | AL|CL|DL|BL|AH|CH|DH|BH
+                | ES|CS|SS|DS|FS|GS ] }
 
     # 文の定義
     rule label_stmt { <label> }
@@ -162,33 +189,83 @@ class AssemblerActions is export {
 
         my $info = self!select-variant($m, @variants, @ops);
 
-        if $info && $info<type> eq 'pseudo' {
+        if $info && ($info<type> // '') eq 'pseudo' {
             make PseudoNode.new(mnemonic => $m, operands => @ops);
         } else {
-            make InstructionNode.new(mnemonic => $m, operands => @ops, info => $info // {});
+            my %final_info = $info ?? %$info !! { type => 'unknown' };
+            make InstructionNode.new(mnemonic => $m, operands => @ops, info => %final_info);
         }
     }
 
     method !select-variant($mnemonic, @variants, @ops) {
         return {} if @variants.elems == 0;
-        return @variants[0] if @variants.elems == 1;
+
+        # Pseudo-instructions match by mnemonic only
+        if @variants[0]<type> eq 'pseudo' {
+            return @variants[0];
+        }
 
         for @variants -> $v {
             if self!match-variant($v, @ops) {
                 return $v;
             }
         }
-        return @variants[0];
+        return {};
     }
 
     method !match-variant($v, @ops) {
         my $type = $v<type> // '';
+        my $v_width = $v<width> // 0;
+
         given $type {
+            when 'pseudo' { return True; }
             when 'reg-reg' {
-                return @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Register;
+                return False unless @ops.elems == 2;
+                return False unless @ops[0] ~~ Register && @ops[1] ~~ Register;
+                return @ops[0].width == @ops[1].width
+                    && !@ops[0].is-segment && !@ops[1].is-segment;
             }
-            when 'reg-imm8' | 'reg-imm16' | 'reg-imm32' {
-                return @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Immediate;
+            when 'sreg-reg' {
+                return False unless @ops.elems == 2;
+                return False unless @ops[0] ~~ Register && @ops[1] ~~ Register;
+                return @ops[0].is-segment && @ops[1].width == 16;
+            }
+            when 'reg-sreg' {
+                return False unless @ops.elems == 2;
+                return False unless @ops[0] ~~ Register && @ops[1] ~~ Register;
+                return @ops[1].is-segment && @ops[0].width == 16;
+            }
+            when 'reg-mem' {
+                return @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Memory
+                    && ($v_width == 0 || @ops[0].width == $v_width);
+            }
+            when 'mem-reg' {
+                return @ops.elems == 2 && @ops[0] ~~ Memory && @ops[1] ~~ Register
+                    && ($v_width == 0 || @ops[1].width == $v_width);
+            }
+            when 'reg-imm8' {
+                return False unless @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Immediate;
+                return False if $v<short_reg> && @ops[0].name.uc ne $v<short_reg>.uc;
+                return @ops[0].width == ($v_width || 8);
+            }
+            when 'reg-imm16' {
+                return False unless @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Immediate;
+                return False if $v<short_reg> && @ops[0].name.uc ne $v<short_reg>.uc;
+                return @ops[0].width == 16;
+            }
+            when 'reg-imm16' {
+                return @ops.elems == 2 && @ops[0] ~~ Register && @ops[0].width == 16 && @ops[1] ~~ Immediate;
+            }
+            when 'reg-imm32' {
+                return @ops.elems == 2 && @ops[0] ~~ Register && @ops[0].width == 32 && @ops[1] ~~ Immediate;
+            }
+            when 'short-imm' {
+                return False unless @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Immediate;
+                return False if $v<short_reg> && @ops[0].name.uc ne $v<short_reg>.uc;
+                return @ops[0].width == ($v_width || 8);
+            }
+            when 'short-jump' | 'imm8' {
+                return @ops.elems == 1 && @ops[0] ~~ Immediate;
             }
             when 'no-op' {
                 return @ops.elems == 0;
@@ -291,8 +368,6 @@ class AssemblerActions is export {
         my $scale = 1;
         my $disp = 0;
 
-        # 非常に簡易的な実装（複数の項を順番に処理）
-        # 本来はもっと厳密なパースが必要だが、まずは基本的なケースをカバー
         for $/.caps -> $cap {
             if $cap.key eq 'index' {
                 $index = Register.new(name => $cap.value.Str.uc);
@@ -301,23 +376,18 @@ class AssemblerActions is export {
                 $scale = $cap.value.Int;
             }
             elsif $cap.key eq 'disp' {
-                # TODO: +- を考慮
                 $disp = $cap.value.made;
             }
         }
         
-        # 実際にはもっと複雑なので、一旦単純化して再設計
-        # rule addressing の構造に合わせて取得
         my $mem = Memory.new(base => $base);
         if $<index> {
-            # index is a list because of [...]? and rule structure
             $mem.index = $<index>[0].made;
             $mem.scale = $<scale>[0].Int if $<scale>;
         }
         if $<disp> {
             $mem.disp = $<disp>[0].made;
         } else {
-            # disp が無い場合は 0 (NumberExp) を入れておく
             $mem.disp = NumberExp.new(value => 0);
         }
 
@@ -325,6 +395,12 @@ class AssemblerActions is export {
     }
 
     method reg($/) {
-        make Register.new(name => $/.Str.uc);
+        my $name = $/.Str.uc;
+        my $reg_info = %REGS_DATA{$name};
+        make Register.new(
+            name => $name,
+            width => $reg_info<width>,
+            index => $reg_info<index>
+        );
     }
 }
