@@ -2,17 +2,16 @@ use v6;
 unit module Rakusk::Grammar;
 use JSON::Fast;
 use Rakusk::AST;
+use Rakusk::Util;
 
 # 1. 外部データの読み込み
-our $DEFAULT_INST_PATH = "data/instructions.json";
-my $data = from-json($DEFAULT_INST_PATH.IO.slurp);
-my %INST_DATA = $data<instructions>;
-my %REGS_DATA = $data<registers>;
+# Rakusk::Util からインポートされる %INST_DATA, %REGS_DATA を使用
 
 # ニーモニックから命令定義へのマップ（複数のバリアントを保持可能）
 my %MNEMONIC_MAP;
 for %INST_DATA.kv -> $key, $val {
     my $m = $val<mnemonic> // $key;
+    %MNEMONIC_MAP{$m.uc} //= [];
     %MNEMONIC_MAP{$m.uc}.push($val);
 }
 
@@ -22,21 +21,26 @@ for %MNEMONIC_MAP.kv -> $m, $variants {
         # 優先度スコア: 低いほど優先
         # 1. pseudo (最優先)
         # 2. short-imm
-        # 3. base_opcode を持つもの (MOV AX, imm 等)
-        # 4. その他
+        # 3. short-jump
+        # 4. base_opcode を持つもの (MOV AX, imm 等)
+        # 5. その他
         my $v_a = $^a;
         my $v_b = $^b;
         my $score_a = do {
-            if ($v_a<type> // '') eq 'pseudo' { 0 }
-            elsif ($v_a<type> // '') eq 'short-imm' { 1 }
-            elsif $v_a<base_opcode> { 2 }
-            else { 3 }
+            my $type = $v_a<type> // '';
+            if $type eq 'pseudo' { 0 }
+            elsif $type eq 'short-imm' { 1 }
+            elsif $type eq 'short-jump' { 2 }
+            elsif $v_a<base_opcode> { 3 }
+            else { 4 }
         };
         my $score_b = do {
-            if ($v_b<type> // '') eq 'pseudo' { 0 }
-            elsif ($v_b<type> // '') eq 'short-imm' { 1 }
-            elsif $v_b<base_opcode> { 2 }
-            else { 3 }
+            my $type = $v_b<type> // '';
+            if $type eq 'pseudo' { 0 }
+            elsif $type eq 'short-imm' { 1 }
+            elsif $type eq 'short-jump' { 2 }
+            elsif $v_b<base_opcode> { 3 }
+            else { 4 }
         };
         $score_a <=> $score_b;
     }) ];
@@ -81,7 +85,8 @@ grammar Assembler is export {
                 | EAX|EBX|ECX|EDX|ESI|EDI|EBP|ESP
                 | AX|BX|CX|DX|SI|DI|BP|SP
                 | AL|CL|DL|BL|AH|CH|DH|BH
-                | ES|CS|SS|DS|FS|GS ] }
+                | ES|CS|SS|DS|FS|GS
+                | CR0|CR2|CR3|CR4 ] }
 
     # 文の定義
     rule label_stmt { <label> }
@@ -99,7 +104,11 @@ grammar Assembler is export {
     }
 
     rule operand_list { <operand> [ ',' <operand> ]* }
-    token operand { <exp> }
+    rule operand {
+        | <size_prefix>? <sel=exp> ':' <off=exp>
+        | <size_prefix>? <single=exp>
+    }
+    token size_prefix { :i [ BYTE|WORD|DWORD|FAR ] }
 
     # 式（二項演算の優先順位）
     rule exp { <mult_exp> [ <add_op> <mult_exp> ]* }
@@ -201,7 +210,7 @@ class AssemblerActions is export {
         return {} if @variants.elems == 0;
 
         # Pseudo-instructions match by mnemonic only
-        if @variants[0]<type> eq 'pseudo' {
+        if (@variants[0]<type> // '') eq 'pseudo' {
             return @variants[0];
         }
 
@@ -253,9 +262,6 @@ class AssemblerActions is export {
                 return False if $v<short_reg> && @ops[0].name.uc ne $v<short_reg>.uc;
                 return @ops[0].width == 16;
             }
-            when 'reg-imm16' {
-                return @ops.elems == 2 && @ops[0] ~~ Register && @ops[0].width == 16 && @ops[1] ~~ Immediate;
-            }
             when 'reg-imm32' {
                 return @ops.elems == 2 && @ops[0] ~~ Register && @ops[0].width == 32 && @ops[1] ~~ Immediate;
             }
@@ -264,8 +270,19 @@ class AssemblerActions is export {
                 return False if $v<short_reg> && @ops[0].name.uc ne $v<short_reg>.uc;
                 return @ops[0].width == ($v_width || 8);
             }
-            when 'short-jump' | 'imm8' {
+            when 'short-jump' | 'near-jump' | 'imm8' {
                 return @ops.elems == 1 && @ops[0] ~~ Immediate;
+            }
+            when 'far-jump' {
+                return @ops.elems == 1 && @ops[0] ~~ SegmentedAddress;
+            }
+            when 'reg-cr' {
+                return @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Register
+                    && (%REGS_DATA{@ops[1].name.uc}<type> // '') eq 'control';
+            }
+            when 'cr-reg' {
+                return @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Register
+                    && (%REGS_DATA{@ops[0].name.uc}<type> // '') eq 'control';
             }
             when 'no-op' {
                 return @ops.elems == 0;
@@ -276,11 +293,34 @@ class AssemblerActions is export {
 
     method operand_list($/) { make $<operand>».made; }
     method operand($/) {
-        my $made = $<exp>.made;
-        if $made ~~ Expression {
-            make Immediate.new(expr => $made);
+        if $<sel> {
+            my $selector_expr = $<sel>.made;
+            my $offset_expr = $<off>.made;
+            # selector_expr/offset_expr might be Immediate, we need the Expression inside
+            my $sel = $selector_expr ~~ Immediate ?? $selector_expr.expr !! $selector_expr;
+            my $off = $offset_expr ~~ Immediate ?? $offset_expr.expr !! $offset_expr;
+            my $sa = SegmentedAddress.new(selector => $sel, offset => $off);
+            make $sa;
         } else {
-            make $made;
+            my $made = $<single>.made;
+            if $<size_prefix> {
+                my $prefix = $<size_prefix>.Str.uc;
+                if $made ~~ Memory {
+                    $made.size_prefix = $prefix;
+                    make $made;
+                } else {
+                    # If it's not memory, it might be an immediate with a size prefix
+                    # (though less common in this assembler's style, we handle it)
+                    my $expr = $made ~~ Immediate ?? $made.expr !! $made;
+                    make Immediate.new(expr => $expr); # We might need to store size in Immediate too if needed
+                }
+            } else {
+                if $made ~~ Expression {
+                    make Immediate.new(expr => $made);
+                } else {
+                    make $made;
+                }
+            }
         }
     }
 

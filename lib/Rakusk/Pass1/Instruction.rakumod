@@ -109,11 +109,31 @@ method process-JMP($node, %regs, %env) {
     my $mnemonic = $node.mnemonic;
     my @operands = $node.operands;
 
+    my $size = 0;
     if @operands.elems > 0 {
         my $op = @operands[0];
+        if $op ~~ SegmentedAddress {
+            # JMP selector:offset
+            # 16-bit mode: EA + ptr16:16/32 -> 5 or 7 bytes
+            # In 16-bit mode, it's usually EA + ptr16:16 (5 bytes) 
+            # but if it's a 32-bit offset it can be 7 bytes.
+            # gosk says: estimatedSize = 8 (66h + EA + ptr16:32) in 16-bit mode
+            # or 7 (EA + ptr16:32) in 32-bit mode.
+            if self.bit_mode == 16 {
+                $size = 5; # Assume 16-bit offset for now: EA (1) + OFF (2) + SEG (2) = 5
+                # If it's harib00i: JMP DWORD 2*8:0x0000001b
+                # The DWORD prefix should tell us it's 32-bit offset.
+                # However, our SegmentedAddress doesn't have size info yet.
+            } else {
+                $size = 7; # EA (1) + OFF (4) + SEG (2) = 7
+            }
+        } else {
+            $size = self.estimate-jump-size($mnemonic, self.bit_mode);
+        }
+    } else {
+        $size = self.estimate-jump-size($mnemonic, self.bit_mode);
     }
-
-    my $size = self.estimate-jump-size($mnemonic, self.bit_mode);
+    
     self.pc += $size;
 }
 
@@ -138,7 +158,7 @@ method size-of-instruction($node, %regs, %env) {
     given %info<type> {
         when 'no-op' { return 1; }
         when 'reg-imm8' {
-            return (%info<width> // 8) == 8 ?? 2 !! 3;
+            return %info<base_opcode> ?? 2 !! 3;
         }
         when 'short-imm' {
             return (%info<width> // 8) == 8 ?? 2 !! 3;
@@ -160,6 +180,12 @@ method size-of-instruction($node, %regs, %env) {
                 }
             }
             return $size;
+        }
+        when 'reg-cr' | 'cr-reg' {
+            return 3; # 0F 20/22 /r
+        }
+        when 'imm8-short' {
+            return 2;
         }
     }
     return 0;

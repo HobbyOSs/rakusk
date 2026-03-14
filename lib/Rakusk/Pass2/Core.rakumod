@@ -9,14 +9,24 @@ unit class Rakusk::Pass2::Core does Rakusk::Pass2::Instruction does Rakusk::Pass
 
 has @.ast;
 has Buf $.output is rw = Buf.new();
+has Int $.bit_mode is rw = 16;
 
 method assemble(%regs, %symbols = {}) {
     my $pc = 0;
+    $!bit_mode = 16;
     $!output = Buf.new();
     for @!ast -> $node {
         if $node ~~ PseudoNode && $node.mnemonic eq 'ORG' {
             my $val = $node.operands[0];
             $pc = self.eval-to-int($val, { symbols => %symbols, PC => $pc });
+            next;
+        }
+        if $node ~~ ConfigStmt && $node.type eq 'BITS' {
+            $!bit_mode = self.eval-to-int($node.value, { symbols => %symbols, PC => $pc });
+            next;
+        }
+        if $node ~~ PseudoNode && $node.mnemonic eq 'BITS' {
+            $!bit_mode = self.eval-to-int($node.operands[0], { symbols => %symbols, PC => $pc });
             next;
         }
 

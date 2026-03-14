@@ -35,9 +35,11 @@ class Memory does Operand is export {
     has $.index is rw;        # Register or Str
     has $.scale is rw = 1;    # Int
     has $.disp is rw = 0;     # Expression
+    has $.size_prefix is rw;  # BYTE, WORD, DWORD etc.
 
     method Str {
-        my $s = "[";
+        my $s = $!size_prefix ?? $!size_prefix ~ " " !! "";
+        $s ~= "[";
         $s ~= $!base.Str if $!base;
         if $!index {
             $s ~= "+" if $!base;
@@ -55,5 +57,14 @@ class Memory does Operand is export {
         }
         $s ~= "]";
         $s;
+    }
+}
+
+class SegmentedAddress does Operand is export {
+    has Expression $.selector;
+    has Expression $.offset;
+
+    method Str {
+        $!selector.Str ~ ":" ~ $!offset.Str;
     }
 }

@@ -63,13 +63,84 @@ method encode-instruction($node, %regs, %env) {
         my $offset = $target - (%env<PC> + 2);
         return Buf.new(%info<opcode>.parse-base(16), $offset % 256);
     }
+    elsif $type eq 'near-jump' {
+        my $target = self.eval-to-int($node.operands[0], %env);
+        # JMP rel16 (E9) is 3 bytes in 16-bit mode
+        # JMP rel32 (E9) is 5 bytes in 32-bit mode
+        my $inst_size = (self.bit_mode == 16 ?? 3 !! 5);
+        my $offset = $target - (%env<PC> + $inst_size);
+        my $bin = Buf.new(%info<opcode>.parse-base(16));
+        if self.bit_mode == 16 {
+            $bin.push($offset % 256);
+            $bin.push(($offset +> 8) % 256);
+        } else {
+            $bin.push($offset % 256);
+            $bin.push(($offset +> 8) % 256);
+            $bin.push(($offset +> 16) % 256);
+            $bin.push(($offset +> 24) % 256);
+        }
+        return $bin;
+    }
+    elsif $type eq 'far-jump' {
+        # EA /ptr16:16 or ptr16:32
+        my $op = $node.operands[0];
+        my $selector = self.eval-to-int($op.selector, %env);
+        my $offset = self.eval-to-int($op.offset, %env);
+        
+        my $bin = Buf.new();
+        # If offset is 32-bit, we might need 66h prefix in 16-bit mode
+        # For now let's assume if bit_mode is 32, we use 32-bit offset.
+        # Or if harib00i uses DWORD JMP, we should use 32-bit offset.
+        my $use_32bit_offset = (self.bit_mode == 32);
+        # In harib00i: JMP DWORD 2*8:0x0000001b
+        # We need a way to detect DWORD.
+        
+        $bin.push(%info<opcode>.parse-base(16));
+        if $use_32bit_offset {
+            $bin.push($offset % 256, ($offset +> 8) % 256, ($offset +> 16) % 256, ($offset +> 24) % 256);
+        } else {
+            $bin.push($offset % 256, ($offset +> 8) % 256);
+        }
+        $bin.push($selector % 256, ($selector +> 8) % 256);
+        
+        if self.bit_mode == 16 && $use_32bit_offset {
+            $bin = Buf.new(0x66) ~ $bin;
+        }
+        return $bin;
+    }
     elsif $type eq 'imm8' {
         my $val = self.eval-to-int($node.operands[0], %env);
         return Buf.new(%info<opcode>.parse-base(16), $val % 256);
     }
     elsif $type eq 'short-imm' {
         my $imm_val = self.eval-to-int($node.operands[1], %env);
+        my $bin = Buf.new(%info<opcode>.parse-base(16));
+        if (%info<width> // 8) == 8 {
+            $bin.push($imm_val % 256);
+        } else {
+            $bin.push($imm_val % 256, ($imm_val +> 8) % 256);
+            if self.bit_mode == 32 && %info<width> == 32 {
+                 $bin.push(($imm_val +> 16) % 256, ($imm_val +> 24) % 256);
+            }
+        }
+        return $bin;
+    }
+    elsif $type eq 'imm8-short' {
+        my $imm_val = self.eval-to-int($node.operands[0], %env);
         return Buf.new(%info<opcode>.parse-base(16), $imm_val % 256);
+    }
+    elsif $type eq 'reg-cr' || $type eq 'cr-reg' {
+        my $reg_op = $node.operands.grep({ $_ ~~ Register && %REGS_DATA{$_.name.uc}<type> ne 'control' })[0];
+        my $cr_op = $node.operands.grep({ $_ ~~ Register && %REGS_DATA{$_.name.uc}<type> eq 'control' })[0];
+        my $modrm;
+        if $type eq 'reg-cr' {
+             # MOV reg, CRx -> 0F 20 /r (reg is rm, CRx is reg field)
+             $modrm = pack-modrm(mod => 3, reg => $cr_op.index, rm => $reg_op.index);
+        } else {
+             # MOV CRx, reg -> 0F 22 /r (CRx is reg field, reg is rm)
+             $modrm = pack-modrm(mod => 3, reg => $cr_op.index, rm => $reg_op.index);
+        }
+        return Buf.new(0x0F, %info<opcode>.parse-base(16) % 256, $modrm);
     }
     elsif $mnemonic eq 'ADD' || $mnemonic eq 'CMP' {
         my $opcode = %info<opcode>.parse-base(16);

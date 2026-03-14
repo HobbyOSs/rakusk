@@ -16,6 +16,7 @@ sub EXPORT {
         Register       => Rakusk::AST::Operand::Register,
         Immediate      => Rakusk::AST::Operand::Immediate,
         Memory         => Rakusk::AST::Operand::Memory,
+        SegmentedAddress => Rakusk::AST::Operand::SegmentedAddress,
         LabelStmt      => Rakusk::AST::Statement::LabelStmt,
         DeclareStmt    => Rakusk::AST::Statement::DeclareStmt,
         ExportSymStmt  => Rakusk::AST::Statement::ExportSymStmt,
