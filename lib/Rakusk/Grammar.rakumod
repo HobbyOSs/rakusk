@@ -3,140 +3,143 @@ unit module Rakusk::Grammar;
 use JSON::Fast;
 use Rakusk::AST;
 
-# 1. 外部データの読み込み（デフォルトパス）
+# 1. 外部データの読み込み
 our $DEFAULT_INST_PATH = "data/instructions.json";
-
-# 文法定義を動的に生成するためのデータ準備
 my $data = from-json($DEFAULT_INST_PATH.IO.slurp);
-my @inst_with_ops = $data<instructions>.grep({ .value<type> ne 'no-op' }).map(*.key).sort({ $^b.chars <=> $^a.chars });
-my @inst_no_ops   = $data<instructions>.grep({ .value<type> eq 'no-op' }).map(*.key).sort({ $^b.chars <=> $^a.chars });
-my %REGS_DATA     = $data<registers>;
-my %INST_DATA     = $data<instructions>;
+my %INST_DATA = $data<instructions>;
+my %REGS_DATA = $data<registers>;
 
 grammar Assembler is export {
-    token TOP { ^ <line>* $ }
+    # 既存の ws をオーバーライドして、コメントも空白として扱う
+    # ただし改行は文の区切りとして重要なので含めない
+    token ws {
+        [ <[ \t ]> | " " | <comment> ]*
+    }
+    token comment { [ ';' | '#' ] \N* }
 
-    token line {
-        | <ws_only>+ [ \n | $ ]
-        | \n
-        | <statement>
+    token TOP {
+        ^ <.ws> [ <statement> | \n+ <.ws> ]* $
     }
 
-    token statement {
-        <ws_only>*
+    # 各文は改行またはファイル末尾で終わる
+    rule statement {
         [
+        | <label_stmt>
+        | <declare_stmt>
+        | <export_sym_stmt>
+        | <extern_sym_stmt>
+        | <config_stmt>
         | <mnemonic_stmt>
         | <opcode_stmt>
-        | <comment>
-        | <empty>
         ]
-        <ws_only>*
         [ \n | $ ]
-        <?{ $/.chars > 0 }>
     }
 
-    token mnemonic_stmt {
-        <mnemonic_op_req> \s+ <operand_list>
-    }
-
-    token opcode_stmt {
-        <mnemonic_op_none>
-    }
-
-    token mnemonic_op_req  { :i @( @inst_with_ops ) }
-    token mnemonic_op_none { :i @( @inst_no_ops ) }
-
-    token operand_list {
-        <operand> [ \s* ',' \s* <operand> ]*
-    }
-
-    token operand { <reg> | <imm> | <string_lit> | <symbol_pc> }
-    token reg     { :i @( %REGS_DATA.keys.sort({ $^b.chars <=> $^a.chars }) ) }
-    token imm     { :i [ '-'? '0x' <[0..9a..f]>+ | '-'? <[0..9]>+ ] }
+    # 基本要素
+    token ident { <[a..zA..Z$_.]> <[a..zA..Z$_.0..9]>* }
+    token label { <ident> ':' }
+    token num_lit { '-'? \d+ }
+    token hex_lit { :i 0x <[0..9a..fA..F]>+ }
     token string_lit {
         | '"' <( [ [ \\ . ] | <-[ " ]> ]* )> '"'
         | "'" <( [ [ \\ . ] | <-[ ' ]> ]* )> "'"
     }
-    token symbol_pc { '$' }
+    token reg { :i @( %REGS_DATA.keys.sort({ $^b.chars <=> $^a.chars }) ) }
 
-    token comment { ';' \N* }
-    token ws_only { <[ \t ]> }
-    token empty   { <?> }
+    # 文の定義
+    rule label_stmt { <label> }
+    rule declare_stmt { <ident> 'EQU' <exp> }
+    rule export_sym_stmt { 'GLOBAL' <ident> [ ',' <ident> ]* }
+    rule extern_sym_stmt { 'EXTERN' <ident> [ ',' <ident> ]* }
+    rule config_stmt { '[' <config_type> <exp> ']' }
+    token config_type { :i BITS|INSTRSET|OPTIMIZE|FORMAT|PADDING|PADSET|SECTION|ABSOLUTE|FILE }
+
+    rule mnemonic_stmt { <mnemonic_op_any> <operand_list> }
+    token opcode_stmt { <mnemonic_op_any> }
+    token mnemonic_op_any { :i @( %INST_DATA.keys.sort({ $^b.chars <=> $^a.chars }) ) }
+
+    rule operand_list { <operand> [ ',' <operand> ]* }
+    token operand { <exp> }
+
+    # 式（二項演算の優先順位は簡略化）
+    rule exp { <term> [ <op> <term> ]* }
+    token op { <[ + \- * / % ]> }
+    rule term {
+        | <factor>
+        | '(' <exp> ')'
+    }
+
+    token factor {
+        | <reg>
+        | <hex_lit>
+        | <num_lit>
+        | <string_lit>
+        | <ident>
+        | '$'
+    }
 }
 
 class AssemblerActions is export {
     method TOP($/) {
-        make $<line>».made.grep(*.defined);
-    }
-
-    method line($/) {
-        make $<statement> ?? $<statement>.made !! Nil;
+        make $<statement>».made.grep(*.defined);
     }
 
     method statement($/) {
-        if $<mnemonic_stmt> { make $<mnemonic_stmt>.made }
-        elsif $<opcode_stmt> { make $<opcode_stmt>.made }
-        else { make Nil }
+        make $/.values[0].made;
+    }
+
+    method label_stmt($/) {
+        make LabelStmt.new(label => $<label><ident>.Str);
+    }
+
+    method declare_stmt($/) {
+        make DeclareStmt.new(name => $<ident>.Str, value => $<exp>.made);
+    }
+
+    method export_sym_stmt($/) {
+        make ExportSymStmt.new(symbols => $<ident>».Str);
+    }
+
+    method extern_sym_stmt($/) {
+        make ExternSymStmt.new(symbols => $<ident>».Str);
+    }
+
+    method config_stmt($/) {
+        make ConfigStmt.new(type => $<config_type>.Str.uc, value => $<exp>.made);
     }
 
     method opcode_stmt($/) {
-        my $m = $<mnemonic_op_none>.uc;
-        my $info = %INST_DATA{$m};
-        make InstructionNode.new(
-            mnemonic => $m,
-            info     => $info
-        );
+        my $m = $<mnemonic_op_any>.uc;
+        make InstructionNode.new(mnemonic => $m, info => %INST_DATA{$m});
     }
 
     method mnemonic_stmt($/) {
-        my $m = $<mnemonic_op_req>.uc;
+        my $m = $<mnemonic_op_any>.uc;
         my $info = %INST_DATA{$m};
-        
-        if $info<type> eq 'reg-imm8' {
-            my @ops = $<operand_list><operand>;
-            my $reg_name = @ops[0]<reg>.uc;
-            my $imm_val  = self.parse-imm(@ops[1]<imm>);
-            
-            make InstructionNode.new(
-                mnemonic => $m,
-                operands => [$reg_name, $imm_val],
-                info     => $info
-            );
-        }
-        elsif $info<type> eq 'pseudo' {
-            my @ops_nodes = $<operand_list><operand>;
-            my @operands;
-            for @ops_nodes -> $op_node {
-                if $op_node<imm> {
-                    @operands.push(self.parse-imm($op_node<imm>));
-                }
-                elsif $op_node<string_lit> {
-                    @operands.push($op_node<string_lit>.Str);
-                }
-                elsif $op_node<symbol_pc> {
-                    @operands.push('$'); # プレースホルダとして保持
-                }
-            }
-            make PseudoNode.new(
-                mnemonic => $m,
-                operands => @operands
-            );
+        my @ops = $<operand_list>.made;
+        if $info<type> eq 'pseudo' {
+            make PseudoNode.new(mnemonic => $m, operands => @ops);
+        } else {
+            make InstructionNode.new(mnemonic => $m, operands => @ops, info => $info);
         }
     }
 
-    method parse-imm($imm_match) {
-        my $str = $imm_match.Str;
-        my $sign = 1;
-        if $str.starts-with('-') {
-            $sign = -1;
-            $str = $str.substr(1);
-        }
-
-        if $str.starts-with('0x', :i) {
-            return $sign * $str.substr(2).parse-base(16);
-        }
-        else {
-            return $sign * $str.parse-base(10);
-        }
+    method operand_list($/) { make $<operand>».made; }
+    method operand($/) { make $<exp>.made; }
+    method exp($/) {
+        my $res = $<term>[0].made;
+        # TODO: 演算の実装（現在は最初の一つのみ）
+        make $res;
+    }
+    method term($/) {
+        make $<factor> ?? $<factor>.made !! $<exp>.made;
+    }
+    method factor($/) {
+        if $<reg> { make $<reg>.Str.uc }
+        elsif $<hex_lit> { make $<hex_lit>.Str.substr(2).parse-base(16) }
+        elsif $<num_lit> { make $<num_lit>.Int }
+        elsif $<string_lit> { make $<string_lit>.Str }
+        elsif $<ident> { make $<ident>.Str }
+        elsif $/ eq '$' { make '$' }
     }
 }

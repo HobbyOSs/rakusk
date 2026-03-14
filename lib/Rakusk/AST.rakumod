@@ -3,7 +3,31 @@ unit module Rakusk::AST;
 
 class Node is export { }
 
-class InstructionNode is Node is export {
+class Statement is Node is export { }
+
+class LabelStmt is Statement is export {
+    has $.label;
+}
+
+class DeclareStmt is Statement is export {
+    has $.name;
+    has $.value;
+}
+
+class ExportSymStmt is Statement is export {
+    has @.symbols;
+}
+
+class ExternSymStmt is Statement is export {
+    has @.symbols;
+}
+
+class ConfigStmt is Statement is export {
+    has $.type;
+    has $.value;
+}
+
+class InstructionNode is Statement is export {
     has $.mnemonic;
     has @.operands;
     has %.info;
@@ -22,7 +46,7 @@ class InstructionNode is Node is export {
     }
 }
 
-class PseudoNode is Node is export {
+class PseudoNode is Statement is export {
     has $.mnemonic;
     has @.operands;
 
