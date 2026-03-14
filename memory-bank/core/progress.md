@@ -1,7 +1,7 @@
 # Progress - rakusk
 
 ## 実装済み機能
-- [x] Pass 1 / Pass 2 のモジュール分割とディレクトリ構造の整理 (`lib/Rakusk/`)
+- [x] Pass 1 / Pass 2 のリファクタリングとサブモジュール分割 (`lib/Rakusk/Pass1/`, `lib/Rakusk/Pass2/`)
 - [x] Pass 1 実装の強化と `gosk` からの命令ハンドラ移植 (`lib/Rakusk/Pass1.rakumod`)
 - [x] 各種命令（MOV, RET, JMP, INT, 算術・論理演算等）のサイズ計算
 - [x] 疑似命令（ORG, DB, DW, DD, RESB, ALIGNB, GLOBAL, EXTERN）のサポート
