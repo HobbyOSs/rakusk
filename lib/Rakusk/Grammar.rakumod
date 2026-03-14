@@ -82,8 +82,8 @@ grammar Assembler is export {
         | <addressing>
         | <hex_lit>
         | <num_lit>
-        | <ident>
         | <string_lit>
+        | <ident>
         | '$'
     }
 
@@ -213,12 +213,21 @@ class AssemblerActions is export {
                 $factor = NumberFactor.new(value => $<num_lit>.Int);
             }
             elsif $<string_lit> {
-                $factor = StringFactor.new(value => $<string_lit>.Str);
+                my $s = $<string_lit>.Str;
+                if $/.Str.starts-with("'") {
+                    if $s.chars == 1 {
+                        $factor = CharFactor.new(value => $s);
+                    } else {
+                        $factor = StringFactor.new(value => $s);
+                    }
+                } else {
+                    $factor = StringFactor.new(value => $s);
+                }
             }
             elsif $<ident> {
                 $factor = IdentFactor.new(value => $<ident>.Str);
             }
-            elsif $/ eq '$' {
+            elsif $/.Str eq '$' {
                 $factor = IdentFactor.new(value => '$');
             }
 

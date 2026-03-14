@@ -17,7 +17,10 @@ class NumberExp does Expression is export {
     method value() {
         return $!value;
     }
-    method Int { $!value.Int }
+    method Int { 
+        return $!value if $!value ~~ Int;
+        $!value.Int 
+    }
     method Str { $!value.Str }
 }
 
@@ -25,7 +28,7 @@ class ImmExp does Expression is export {
     has Factor $.factor;
     method eval(%env) {
         my $val = $!factor.eval(%env);
-        if $val ~~ Int {
+        if $val ~~ Int | Str {
             return NumberExp.new(value => $val);
         }
         return self;
@@ -53,12 +56,12 @@ class MultExp does Expression is export {
 
     method eval(%env) {
         my $res = $!head.eval(%env);
-        return self unless $res ~~ NumberExp;
+        return self unless $res ~~ NumberExp && $res.value ~~ Int;
         
         my $val = $res.value;
         for @!operators.kv -> $i, $op {
             my $tail_res = @!tails[$i].eval(%env);
-            return self unless $tail_res ~~ NumberExp;
+            return self unless $tail_res ~~ NumberExp && $tail_res.value ~~ Int;
             
             given $op {
                 when '*' { $val *= $tail_res.value }
@@ -99,12 +102,12 @@ class AddExp does Expression is export {
         my $res = $!head.eval(%env);
         # 完全に定数化できない場合も、部分的に定数畳み込みすることは可能だが、
         # まずは単純な実装にする
-        return self unless $res ~~ NumberExp;
+        return self unless $res ~~ NumberExp && $res.value ~~ Int;
 
         my $val = $res.value;
         for @!operators.kv -> $i, $op {
             my $tail_res = @!tails[$i].eval(%env);
-            return self unless $tail_res ~~ NumberExp;
+            return self unless $tail_res ~~ NumberExp && $tail_res.value ~~ Int;
 
             given $op {
                 when '+' { $val += $tail_res.value }

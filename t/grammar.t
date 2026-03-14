@@ -31,6 +31,10 @@ my @test-cases = (
     { input => "MOV AX, BX # comment", desc => "hash comment" },
     { input => "# full line comment", desc => "full line comment" },
     { input => "", desc => "empty line" },
+
+    # Complex expressions from gosk
+    { input => 'RESB 0x7dfe-$', desc => 'complex expression in RESB' },
+    { input => 'DB 512*18*2/4', desc => 'complex arithmetic in DB' },
 );
 
 for @test-cases -> %tc {

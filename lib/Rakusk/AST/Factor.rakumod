@@ -31,8 +31,17 @@ class CharFactor does Factor is export {
     has $.value;
     method eval(%env) {
         # 'A' -> 65
-        my $content = $!value.substr(1, *-1);
-        return $content.ord;
+        my $v = $!value;
+        if $v ~~ Match { $v = $v.Str }
+        
+        if $v.chars == 1 {
+            return $v.ord;
+        }
+        # Fallback if quotes are still there
+        if $v.match(/^['"'|"'"]/) {
+             $v = $v.substr(1, *-1);
+        }
+        return $v.ord;
     }
     method Str { $!value }
 }

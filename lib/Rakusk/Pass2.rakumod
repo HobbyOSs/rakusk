@@ -61,7 +61,11 @@ class Pass2 is export {
                     if $val ~~ Int {
                         $bin.push($val % 256);
                     } elsif $val ~~ Str {
-                        $bin ~= $val.encode('ascii');
+                        if $val.chars > 1 {
+                            $bin ~= $val.encode('ascii');
+                        } else {
+                            $bin.push($val.ord % 256);
+                        }
                     }
                 }
             }
