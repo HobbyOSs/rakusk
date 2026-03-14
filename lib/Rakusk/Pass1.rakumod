@@ -15,12 +15,15 @@ class Pass1 is export {
         $!pc = 0;
         $!bit_mode = 16;
         for @!ast -> $node {
+            my %env = symbols => %!symbols, PC => $!pc;
+
             if $node ~~ LabelStmt {
-                %!symbols{$node.label} = $!pc;
+                my $label = $node.label;
+                $label ~~ s/\:$//;
+                %!symbols{$label} = $!pc;
                 next;
             }
             if $node ~~ DeclareStmt {
-                my %env = symbols => %!symbols, PC => $!pc;
                 my $val = self!eval-to-any($node.value, %env);
                 %!symbols{$node.name} = $val;
                 next;
@@ -28,31 +31,136 @@ class Pass1 is export {
 
             if $node ~~ ConfigStmt {
                 if $node.type eq 'BITS' {
-                    my %env = symbols => %!symbols, PC => $!pc;
                     $!bit_mode = self!eval-to-int($node.value, %env);
                 }
                 next;
             }
 
-            # ORG 命令の特別な処理
-            if $node ~~ PseudoNode && $node.mnemonic eq 'ORG' {
-                my %env = symbols => %!symbols, PC => $!pc;
-                $!pc = self!eval-to-int($node.operands[0], %env);
-                next;
-            }
-
-            # 環境の構築
-            my %env = symbols => %!symbols, PC => $!pc;
-
             if $node ~~ InstructionNode {
-                $!pc += self!size-of-instruction($node, %regs, %env);
+                self!process-instruction($node, %regs, %env);
             }
             elsif $node ~~ PseudoNode {
-                my $size = self!size-of-pseudo($node, %env);
-                $!pc += $size;
+                self!process-pseudo($node, %env);
             }
         }
         return self;
+    }
+
+    method !process-instruction($node, %regs, %env) {
+        my $mnemonic = $node.mnemonic;
+        my @operands = $node.operands;
+
+        # ジャンプ命令判定
+        if $mnemonic ~~ /^[ J | CALL ]/ {
+            self!process-JMP($node, %regs, %env);
+            return;
+        }
+
+        # TODO: 将来的にはハンドラマップ形式にするが、まずはシンプルに分岐
+        if $mnemonic eq 'MOV' {
+            self!process-MOV($node, %regs, %env);
+        }
+        else {
+            # デフォルト処理（1バイト命令など）
+            my $size = self!size-of-instruction($node, %regs, %env);
+            $!pc += $size;
+        }
+    }
+
+    method !process-MOV($node, %regs, %env) {
+        # gosk のロジックを参考に、オペランドに応じたサイズ計算を強化する準備
+        # 現在は既存の size-of-instruction に委譲
+        my $size = self!size-of-instruction($node, %regs, %env);
+        $!pc += $size;
+    }
+
+    method !process-JMP($node, %regs, %env) {
+        my $mnemonic = $node.mnemonic;
+        my $size = self!estimate-jump-size($mnemonic, $!bit_mode);
+        $!pc += $size;
+    }
+
+    method !estimate-jump-size($mnemonic, $bit_mode) {
+        if $bit_mode == 16 {
+            if $mnemonic eq 'CALL' {
+                return 3; # near call
+            }
+            return 2; # short jump
+        }
+        
+        # 32bit/64bit モード
+        if $mnemonic eq 'JMP' || $mnemonic eq 'CALL' {
+            return 5; # rel32
+        }
+        return 6; # Jcc rel32 (0F 8x cd)
+    }
+
+    method !process-pseudo($node, %env) {
+        my $mnemonic = $node.mnemonic;
+        my @operands = $node.operands;
+
+        given $mnemonic {
+            when 'ORG'    { self!process-ORG($node, %env); }
+            when 'DB'     { self!process-DB($node, %env); }
+            when 'DW'     { self!process-DW($node, %env); }
+            when 'DD'     { self!process-DD($node, %env); }
+            when 'RESB'   { self!process-RESB($node, %env); }
+            when 'ALIGNB' { self!process-ALIGNB($node, %env); }
+            default {
+                warn "Unknown pseudo-instruction: $mnemonic";
+            }
+        }
+    }
+
+    method !process-ORG($node, %env) {
+        $!pc = self!eval-to-int($node.operands[0], %env);
+    }
+
+    method !process-DB($node, %env) {
+        my $size = 0;
+        for $node.operands -> $op {
+            my $val = self!eval-to-any($op, %env);
+            if $val ~~ Int {
+                $size += 1;
+            } elsif $val ~~ Str {
+                $size += $val.chars;
+            } elsif $val ~~ NumberExp {
+                $size += 1;
+            } else {
+                # ラベルなどの識別子の場合（Pass1では1バイトと仮定するか、エラーにするか）
+                # gosk ではラベルのアドレスの下位1バイトを格納するので 1 バイト
+                $size += 1;
+            }
+        }
+        $!pc += $size;
+    }
+
+    method !process-DW($node, %env) {
+        my $size = 0;
+        for $node.operands -> $op {
+            $size += 2;
+        }
+        $!pc += $size;
+    }
+
+    method !process-DD($node, %env) {
+        my $size = 0;
+        for $node.operands -> $op {
+            $size += 4;
+        }
+        $!pc += $size;
+    }
+
+    method !process-RESB($node, %env) {
+        $!pc += self!eval-to-int($node.operands[0], %env);
+    }
+
+    method !process-ALIGNB($node, %env) {
+        my $boundary = self!eval-to-int($node.operands[0], %env);
+        if $boundary > 0 {
+            my $padding = ($boundary - ($!pc % $boundary)) % $boundary;
+            $!pc += $padding;
+        }
     }
 
     method !size-of-instruction($node, %regs, %env) {
@@ -69,34 +177,6 @@ class Pass1 is export {
         }
         # 未知の命令タイプや複雑なアドレッシングモードの場合は、
         # 将来的に ModR/M 計算ロジックを呼ぶ
-        return 0;
-    }
-
-    method !size-of-pseudo($node, %env) {
-        my $current_pc = %env<PC> // 0;
-        given $node.mnemonic {
-            when 'DB' {
-                my $size = 0;
-                for $node.operands -> $op {
-                    my $val = self!eval-to-any($op, %env);
-                    if $val ~~ Int {
-                        $size += 1;
-                    } elsif $val ~~ Str {
-                        $size += $val.chars;
-                    }
-                }
-                return $size;
-            }
-            when 'DW' { return $node.operands.elems * 2; }
-            when 'DD' { return $node.operands.elems * 4; }
-            when 'RESB' {
-                return self!eval-to-int($node.operands[0], %env);
-            }
-            when 'ALIGNB' {
-                my $boundary = self!eval-to-int($node.operands[0], %env);
-                return ($boundary - ($current_pc % $boundary)) % $boundary;
-            }
-        }
         return 0;
     }
 
