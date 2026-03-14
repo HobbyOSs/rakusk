@@ -28,6 +28,7 @@
 - [x] `Grammar` と `Actions` のモジュール化とユニットテスト導入。
 - [x] `gosk` を参考にした大量の1バイト命令の追加。
 - [x] `gosk` の `spec.md` を Memory Bank に取り込み。
+- [x] キャッシュ機能付き GitHub Actions CI の設定。
 - [ ] ModR/M バイト生成エンジンの設計と実装。
 
 ## 次のステップ
