@@ -2,10 +2,12 @@
 # Active Context
 
 ## 最近の変更点
-- **Pass 1 / Pass 2 のリファクタリング**:
-    - コードの肥大化を防ぐため、`Rakusk::Pass1` と `Rakusk::Pass2` を AST の構造（Instruction, Pseudo, Statement）に合わせてサブモジュール化。
-    - 各サブモジュールを `role` として定義し、`Core` クラスで合成する構成を採用。
-    - 外部インターフェースを維持したまま、メンテナンス性を向上。
+- **Pass 1 / Pass 2 の大規模リファクタリング**:
+    - `Pass2::Instruction` に共通のエンコードロジック（prefix判定、opcode生成、ModR/M・SIB・Disp生成、即値生成）を抽出。
+    - `Pass1::Instruction` が `Pass2::Instruction` を取り込み、実際のエンコード結果からサイズを算出する構成に変更。これによりロジックの完全な同期を実現。
+    - `Pass1` のコード量を約80%削減し、メンテナンス性を大幅に向上。
+- **Grammar/Actions の整理**:
+    - `try-special-variant` メソッドを導入し、最適化バリアント（imm8算術演算等）の選択ロジックを分離・整理。
 - `gosk` の `day02.t` (Hello OS 3 ブートセクタ) の完全な移植とパス。
 - **16ビットリアルモード対応の強化**:
     - 16ビットアドレッシングモード (`[SI]`, `[BX+DI]` 等) の ModR/M エンコードを `Pass2` に実装。

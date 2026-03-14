@@ -199,49 +199,10 @@ class AssemblerActions is export {
         my @variants = |(%MNEMONIC_MAP{$m} // []);
         my @ops = $<operand_list>.made;
 
-        # Special case for jumps with absolute addresses
-        if $m eq 'JMP' && @ops.elems == 1 && @ops[0] ~~ Immediate {
-             my $ev = @ops[0].expr.eval({});
-             if $ev ~~ NumberExp {
-                 # Prefer near-jump for absolute numeric targets
-                 my $near = @variants.grep({ ($_<type> // '') eq 'near-jump' })[0];
-                 if $near {
-                     make InstructionNode.new(mnemonic => $m, operands => @ops, info => $near);
-                     return;
-                 }
-             }
-        }
-
-        # Special case for arith-logic with imm8
-        if $m ~~ /^(ADD|SUB|CMP|AND|OR|XOR|ADC|SBB)$/ && @ops.elems == 2 && @ops[1] ~~ Immediate && @ops[0] ~~ Register {
-             my $ev = @ops[1].expr.eval({});
-             if $ev ~~ NumberExp && $ev.value.abs <= 127 {
-                 # Prefer short-form (reg-imm8, e.g., 83 /0 ib) if available for this width
-                 # But for AL/AX/EAX, there's also short-imm (e.g., 04 ib, 05 iw)
-                 # harib00i seems to prefer 83 form for OR EAX, 1.
-                 my @matches = @variants.grep({ 
-                     (($_<type> // '') eq 'short-imm' || ($_<type> // '') eq 'reg-imm8')
-                     && ($_<width> // 0) == @ops[0].width
-                     && (!$_<short_reg> || $_<short_reg>.uc eq @ops[0].name.uc)
-                 });
-                 # Size comparison for best variant
-                 my $best;
-                 my $width = @ops[0].width;
-                 if $width == 8 {
-                     # short-imm (2 bytes) vs reg-imm8 (3 bytes)
-                     $best = @matches.grep({ ($_<type> // '') eq 'short-imm' })[0] // @matches[0];
-                 } elsif $width == 16 {
-                     # short-imm (3 bytes) vs reg-imm8 (3 bytes)
-                     $best = @matches.grep({ ($_<type> // '') eq 'short-imm' })[0] // @matches[0];
-                 } else { # 32-bit
-                     # short-imm (6 bytes: 66 05 id) vs reg-imm8 (4 bytes: 66 83 /x ib)
-                     $best = @matches.grep({ ($_<type> // '') eq 'reg-imm8' })[0] // @matches[0];
-                 }
-                 if $best {
-                     make InstructionNode.new(mnemonic => $m, operands => @ops, info => $best);
-                     return;
-                 }
-             }
+        # 特殊な最適化やバリアント選択の優先処理
+        if self!try-special-variant($m, @variants, @ops) -> $special {
+            make $special;
+            return;
         }
 
         my $info = self!select-variant($m, @variants, @ops);
@@ -252,6 +213,41 @@ class AssemblerActions is export {
             my %final_info = $info ?? %$info !! { type => 'unknown' };
             make InstructionNode.new(mnemonic => $m, operands => @ops, info => %final_info);
         }
+    }
+
+    method !try-special-variant($m, @variants, @ops) {
+        # 1. JMP/CALL の絶対アドレス指定に対する near-jump 優先
+        if $m eq 'JMP' | 'CALL' && @ops.elems == 1 && @ops[0] ~~ Immediate {
+             my $ev = @ops[0].expr.eval({});
+             if $ev ~~ NumberExp {
+                 my $near = @variants.grep({ ($_<type> // '') eq 'near-jump' })[0];
+                 return InstructionNode.new(mnemonic => $m, operands => @ops, info => $near) if $near;
+             }
+        }
+
+        # 2. 算術演算での imm8 最適化 (83 /x ib 形式の優先)
+        if $m ~~ /^(ADD|SUB|CMP|AND|OR|XOR|ADC|SBB)$/ && @ops.elems == 2 && @ops[1] ~~ Immediate && @ops[0] ~~ Register {
+             my $ev = @ops[1].expr.eval({});
+             if $ev ~~ NumberExp && $ev.value.abs <= 127 {
+                 my @matches = @variants.grep({ 
+                     (($_<type> // '') ~~ 'short-imm' | 'reg-imm8')
+                     && ($_<width> // 0) == @ops[0].width
+                     && (!$_<short_reg> || $_<short_reg>.uc eq @ops[0].name.uc)
+                 });
+                 
+                 my $best;
+                 my $width = @ops[0].width;
+                 if $width == 8 {
+                     $best = @matches.grep({ ($_<type> // '') eq 'short-imm' })[0] // @matches[0];
+                 } elsif $width == 16 {
+                     $best = @matches.grep({ ($_<type> // '') eq 'short-imm' })[0] // @matches[0];
+                 } else { # 32-bit
+                     $best = @matches.grep({ ($_<type> // '') eq 'reg-imm8' })[0] // @matches[0];
+                 }
+                 return InstructionNode.new(mnemonic => $m, operands => @ops, info => $best) if $best;
+             }
+        }
+        return Nil;
     }
 
     method !select-variant($mnemonic, @variants, @ops) {

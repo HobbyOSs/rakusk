@@ -6,258 +6,251 @@ unit role Rakusk::Pass2::Instruction;
 
 method encode-instruction($node, %regs, %env) {
     my %info = $node.info;
+    my $mnemonic = $node.mnemonic;
+    my $type = %info<type> // '';
+
+    # 1. プレフィックスの取得
+    my $bin = self.get-prefixes($node, %info);
+
+    # 2. オコードの生成
+    $bin ~= self.get-base-opcode($node, %info);
+
+    # 3. ModR/M, SIB, Displacement の生成
+    $bin ~= self.encode-modrm-sib-disp($node, %info, %env);
+
+    # 4. 即値の生成
+    $bin ~= self.encode-immediate($node, %info, %env);
+
+    return $bin;
+}
+
+method get-prefixes($node, %info) {
+    my $bin = Buf.new();
+    
+    # オペランドサイズプレフィックス (0x66)
+    if self.needs_66h($node, %info) {
+        $bin.push(0x66);
+    }
+    
+    # アドレスサイズプレフィックス (0x67)
+    if self.needs_67h($node) {
+        $bin.push(0x67);
+    }
+    
+    return $bin;
+}
+
+method needs_66h($node, %info) {
+    my $mnemonic = $node.mnemonic;
+    my @ops = $node.operands;
+    
+    # IN/OUT の特殊ルール
+    if $mnemonic ~~ 'IN' | 'OUT' {
+        # gosk/pkg/asmdb/instruction_search.go: getPrefix66SizeForInOut
+        # ポート指定が DX で、データレジスタが 16/32bit の場合に 0x66 が必要
+        my $reg = @ops.grep(Register)[0];
+        return False unless $reg;
+        if self.bit_mode == 16 {
+            return $reg.width == 32;
+        } else { # 32-bit mode
+            return $reg.width == 16;
+        }
+    }
+
+    # 一般的なルール: bit_mode とレジスタ/メモリの幅が異なる場合に必要
+    for @ops -> $op {
+        if $op ~~ Register {
+            next if $op.is-segment || $op.is-control;
+            if self.bit_mode == 16 {
+                return True if $op.width == 32;
+            } else { # 32
+                return True if $op.width == 16;
+            }
+        }
+        if $op ~~ Memory {
+            if self.bit_mode == 16 {
+                return True if ($op.size_prefix // '') eq 'DWORD';
+            } else { # 32
+                return True if ($op.size_prefix // '') eq 'WORD';
+            }
+        }
+        if $op ~~ SegmentedAddress {
+            my $use_32bit = (self.bit_mode == 32 || ($op.size_prefix // '') eq 'DWORD');
+            return True if self.bit_mode == 16 && $use_32bit;
+            return True if self.bit_mode == 32 && !$use_32bit;
+        }
+    }
+
+    # 命令定義(JSON)側での指定がある場合
+    if %info<type> ~~ 'reg-imm16' | 'mem-imm16' | 'reg-reg-imm16' {
+        if self.bit_mode == 16 {
+            # 32bit幅のバリアントなら0x66が必要
+            return True if (%info<width> // 0) == 32;
+        } else {
+            return True if (%info<width> // 0) == 16;
+        }
+    }
+
+    return False;
+}
+
+method needs_67h($node) {
+    for $node.operands -> $op {
+        if $op ~~ Memory {
+            my $base = $op.base;
+            my $index = $op.index;
+            my $is_32bit_addr = ($base && $base ~~ Register && $base.width == 32) 
+                             || ($index && $index ~~ Register && $index.width == 32);
+            
+            return True if self.bit_mode == 16 && $is_32bit_addr;
+            return True if self.bit_mode == 32 && !$is_32bit_addr;
+        }
+    }
+    return False;
+}
+
+method get-base-opcode($node, %info) {
     my $type = %info<type> // '';
     my $mnemonic = $node.mnemonic;
+    
+    if $type ~~ 'reg-imm8' | 'reg-imm16' && %info<base_opcode> {
+        my $reg_op = $node.operands[0];
+        my $opcode = %info<base_opcode>.parse-base(16) + $reg_op.index;
+        return Buf.new($opcode);
+    }
+    
+    if $type ~~ 'reg-cr' | 'cr-reg' {
+        return Buf.new(0x0F, ($type eq 'reg-cr' ?? 0x20 !! 0x22));
+    }
 
-    if $type eq 'no-op' {
-        return Buf.new() unless %info<opcode>;
-        return Buf.new(%info<opcode>.parse-base(16));
+    my $op_hex = %info<opcode> // '';
+    my $bin = Buf.new();
+    while $op_hex.chars >= 2 {
+        $bin.push($op_hex.substr(0, 2).parse-base(16));
+        $op_hex = $op_hex.substr(2);
     }
-    elsif $type eq 'reg-imm8' {
-        my $reg_op = $node.operands[0];
-        my $imm_val = self.eval-to-int($node.operands[1], %env);
-        if %info<base_opcode> {
-            my $opcode = %info<base_opcode>.parse-base(16) + $reg_op.index;
-            return Buf.new($opcode, $imm_val % 256);
-        } else {
-            my $opcode = %info<opcode>.parse-base(16);
-            my $reg_field = %info<extension> // $reg_op.index;
-            my $modrm = pack-modrm(mod => 3, reg => $reg_field, rm => $reg_op.index);
-            my $bin = Buf.new();
-            if self.bit_mode == 16 && $reg_op.width == 32 {
-                $bin.push(0x66);
-            }
-            $bin.push($opcode, $modrm, $imm_val % 256);
-            return $bin;
+    return $bin;
+}
+
+method encode-modrm-sib-disp($node, %info, %env) {
+    my $type = %info<type> // '';
+    my @ops = $node.operands;
+    
+    given $type {
+        when 'reg-reg' | 'reg-reg-2' {
+            my $modrm = pack-modrm(mod => 3, reg => @ops[1].index, rm => @ops[0].index);
+            return Buf.new($modrm);
         }
-    }
-    elsif $type eq 'reg-imm16' {
-        my $reg_op = $node.operands[0];
-        my $imm_val = self.eval-to-int($node.operands[1], %env);
-        my $bin = Buf.new();
-        if self.bit_mode == 16 && $reg_op.width == 32 {
-            $bin.push(0x66);
+        when 'sreg-reg' {
+            my $modrm = pack-modrm(mod => 3, reg => @ops[0].index, rm => @ops[1].index);
+            return Buf.new($modrm);
         }
-        if %info<base_opcode> {
-            my $opcode = %info<base_opcode>.parse-base(16) + $reg_op.index;
-            $bin.push($opcode);
-            $bin.push($imm_val % 256, ($imm_val +> 8) % 256);
-            if $reg_op.width == 32 {
-                $bin.push(($imm_val +> 16) % 256, ($imm_val +> 24) % 256);
-            }
-        } else {
-            my $opcode = %info<opcode>.parse-base(16);
-            my $reg_field = %info<extension> // $reg_op.index;
-            my $modrm = pack-modrm(mod => 3, reg => $reg_field, rm => $reg_op.index);
-            $bin.push($opcode, $modrm);
-            $bin.push($imm_val % 256, ($imm_val +> 8) % 256);
-            if $reg_op.width == 32 {
-                $bin.push(($imm_val +> 16) % 256, ($imm_val +> 24) % 256);
-            }
+        when 'reg-sreg' {
+            my $modrm = pack-modrm(mod => 3, reg => @ops[1].index, rm => @ops[0].index);
+            return Buf.new($modrm);
         }
-        return $bin;
-    }
-    elsif $type eq 'reg-reg' {
-        my $dst_op = $node.operands[0];
-        my $src_op = $node.operands[1];
-        my $modrm = pack-modrm(mod => 3, reg => $src_op.index, rm => $dst_op.index);
-        my $bin = Buf.new();
-        if self.bit_mode == 16 && ($dst_op.width == 32 || $src_op.width == 32) {
-            $bin.push(0x66);
+        when 'reg-imm8' | 'reg-imm16' {
+            return Buf.new() if %info<base_opcode>;
+            my $reg_field = %info<extension> // @ops[0].index;
+            my $modrm = pack-modrm(mod => 3, reg => $reg_field, rm => @ops[0].index);
+            return Buf.new($modrm);
         }
-        $bin ~= Buf.new(%info<opcode>.parse-base(16), $modrm);
-        return $bin;
-    }
-    elsif $type eq 'sreg-reg' {
-        my $sreg_op = $node.operands[0];
-        my $reg_op = $node.operands[1];
-        my $modrm = pack-modrm(mod => 3, reg => $sreg_op.index, rm => $reg_op.index);
-        return Buf.new(%info<opcode>.parse-base(16), $modrm);
-    }
-    elsif $type eq 'reg-sreg' {
-        my $reg_op = $node.operands[0];
-        my $sreg_op = $node.operands[1];
-        my $modrm = pack-modrm(mod => 3, reg => $sreg_op.index, rm => $reg_op.index);
-        return Buf.new(%info<opcode>.parse-base(16), $modrm);
-    }
-    elsif $type eq 'reg-mem' || $type eq 'mem-reg' {
-        my $reg_op = $node.operands.grep(Register)[0];
-        my $mem_op = $node.operands.grep(Memory)[0];
-        my ($mod, $rm, $disp_bytes, $sib, $needs_67) = self.encode_mem_op($mem_op, %env);
-        my $modrm = pack-modrm(mod => $mod, reg => $reg_op.index, rm => $rm);
-        my $bin = Buf.new();
-        if $needs_67 { $bin.push(0x67); }
-        if self.bit_mode == 16 && $reg_op.width == 32 {
-            $bin.push(0x66);
-        }
-        $bin ~= Buf.new(%info<opcode>.parse-base(16), $modrm);
-        $bin ~= $sib if $sib;
-        $bin ~= $disp_bytes if $disp_bytes;
-        return $bin;
-    }
-    elsif $type eq 'mem-imm8' || $type eq 'mem-imm16' {
-        my $mem_op = $node.operands.grep(Memory)[0];
-        my $imm_val = self.eval-to-int($node.operands[1], %env);
-        my ($mod, $rm, $disp_bytes, $sib, $needs_67) = self.encode_mem_op($mem_op, %env);
-        my $modrm = pack-modrm(mod => $mod, reg => (%info<extension> // 0), rm => $rm);
-        my $bin = Buf.new();
-        if $needs_67 { $bin.push(0x67); }
-        if self.bit_mode == 16 && (($mem_op.size_prefix // '') eq 'DWORD' || $type eq 'mem-imm32') {
-            $bin.push(0x66);
-        }
-        $bin ~= Buf.new(%info<opcode>.parse-base(16), $modrm);
-        $bin ~= $sib if $sib;
-        $bin ~= $disp_bytes if $disp_bytes;
-        if $type eq 'mem-imm8' {
-            $bin.push($imm_val % 256);
-        } else {
-            $bin.push($imm_val % 256, ($imm_val +> 8) % 256);
-            if $bin[0] == 0x66 || $bin[1] == 0x66 || self.bit_mode == 32 {
-                 $bin.push(($imm_val +> 16) % 256, ($imm_val +> 24) % 256);
-            }
-        }
-        return $bin;
-    }
-    elsif $type eq 'short-jump' {
-        my $target = self.eval-to-int($node.operands[0], %env);
-        my $offset = $target - (%env<PC> + 2);
-        return Buf.new(%info<opcode>.parse-base(16), $offset % 256);
-    }
-    elsif $type eq 'near-jump' {
-        my $target = self.eval-to-int($node.operands[0], %env);
-        my $inst_size = (self.bit_mode == 16 ?? 3 !! 5);
-        my $offset = $target - (%env<PC> + $inst_size);
-        my $bin = Buf.new(%info<opcode>.parse-base(16));
-        if self.bit_mode == 16 {
-            $bin.push($offset % 256, ($offset +> 8) % 256);
-        } else {
-            $bin.push($offset % 256, ($offset +> 8) % 256, ($offset +> 16) % 256, ($offset +> 24) % 256);
-        }
-        return $bin;
-    }
-    elsif $type eq 'far-jump' {
-        my $op = $node.operands[0];
-        my $selector = self.eval-to-int($op.selector, %env);
-        my $offset = self.eval-to-int($op.offset, %env);
-        my $bin = Buf.new();
-        my $use_32bit_offset = (self.bit_mode == 32 || ($op.size_prefix // '') eq 'DWORD');
-        if self.bit_mode == 16 && $use_32bit_offset { $bin.push(0x66); }
-        $bin.push(%info<opcode>.parse-base(16));
-        if $use_32bit_offset {
-            $bin.push($offset % 256, ($offset +> 8) % 256, ($offset +> 16) % 256, ($offset +> 24) % 256);
-        } else {
-            $bin.push($offset % 256, ($offset +> 8) % 256);
-        }
-        $bin.push($selector % 256, ($selector +> 8) % 256);
-        return $bin;
-    }
-    elsif $type eq 'imm8' {
-        my $val = self.eval-to-int($node.operands[0], %env);
-        return Buf.new(%info<opcode>.parse-base(16), $val % 256);
-    }
-    elsif $type eq 'short-imm' {
-        my $reg = $node.operands[0];
-        my $imm_val = self.eval-to-int($node.operands[1], %env);
-        my $bin = Buf.new();
-        if self.bit_mode == 16 && $reg.width == 32 { $bin.push(0x66); }
-        $bin.push(%info<opcode>.parse-base(16));
-        if (%info<width> // 8) == 8 { $bin.push($imm_val % 256); }
-        elsif %info<width> == 16 { $bin.push($imm_val % 256, ($imm_val +> 8) % 256); }
-        else { $bin.push($imm_val % 256, ($imm_val +> 8) % 256, ($imm_val +> 16) % 256, ($imm_val +> 24) % 256); }
-        return $bin;
-    }
-    elsif $type eq 'imm8-short' {
-        my $imm_val = self.eval-to-int($node.operands[0], %env);
-        return Buf.new(%info<opcode>.parse-base(16), $imm_val % 256);
-    }
-    elsif $type eq 'reg-cr' || $type eq 'cr-reg' {
-        my $reg_op = $node.operands.grep({ $_ ~~ Register && !$_.is-control })[0];
-        my $cr_op = $node.operands.grep({ $_ ~~ Register && $_.is-control })[0];
-        my $modrm = pack-modrm(mod => 3, reg => $cr_op.index, rm => $reg_op.index);
-        return Buf.new(0x0F, ($type eq 'reg-cr' ?? 0x20 !! 0x22), $modrm);
-    }
-    elsif $type eq 'mem' {
-        my $mem_op = $node.operands[0];
-        my ($mod, $rm, $disp_bytes, $sib, $needs_67) = self.encode_mem_op($mem_op, %env);
-        my $modrm = pack-modrm(mod => $mod, reg => (%info<extension> // 0), rm => $rm);
-        my $bin = Buf.new();
-        if $needs_67 { $bin.push(0x67); }
-        my $op_hex = %info<opcode> // '';
-        while $op_hex.chars >= 2 {
-            $bin.push($op_hex.substr(0, 2).parse-base(16));
-            $op_hex = $op_hex.substr(2);
-        }
-        $bin.push($modrm);
-        $bin ~= $sib if $sib;
-        $bin ~= $disp_bytes if $disp_bytes;
-        return $bin;
-    }
-    elsif $mnemonic eq 'ADD' || $mnemonic eq 'SUB' || $mnemonic eq 'CMP' || $mnemonic eq 'AND' || $mnemonic eq 'OR' || $mnemonic eq 'XOR' {
-        my $opcode_str = %info<opcode> // '00';
-        my $opcode = $opcode_str.parse-base(16);
-        if $type eq 'reg-imm8' {
-            my $reg_op = $node.operands[0];
-            my $imm = self.eval-to-int($node.operands[1], %env);
-            my $bin = Buf.new();
-            if self.bit_mode == 16 && $reg_op.width == 32 { $bin.push(0x66); }
-            my $modrm = pack-modrm(mod => 3, reg => (%info<extension> // 0), rm => $reg_op.index);
-            $bin.push($opcode, $modrm, $imm % 256);
-            return $bin;
-        }
-        elsif $type eq 'reg-reg' {
-            my $dst_op = $node.operands[0];
-            my $src_op = $node.operands[1];
-            my $bin = Buf.new();
-            if self.bit_mode == 16 && ($dst_op.width == 32 || $src_op.width == 32) { $bin.push(0x66); }
-            my $modrm = pack-modrm(mod => 3, reg => $src_op.index, rm => $dst_op.index);
-            $bin.push($opcode, $modrm);
-            return $bin;
-        }
-        elsif $type eq 'reg-mem' || $type eq 'mem-reg' {
-            my $reg_op = $node.operands.grep(Register)[0];
-            my $mem_op = $node.operands.grep(Memory)[0];
+        when 'reg-mem' | 'mem-reg' {
+            my $reg_op = @ops.grep(Register)[0];
+            my $mem_op = @ops.grep(Memory)[0];
             my ($mod, $rm, $disp_bytes, $sib, $needs_67) = self.encode_mem_op($mem_op, %env);
             my $modrm = pack-modrm(mod => $mod, reg => $reg_op.index, rm => $rm);
-            my $bin = Buf.new();
-            if $needs_67 { $bin.push(0x67); }
-            if self.bit_mode == 16 && $reg_op.width == 32 { $bin.push(0x66); }
-            $bin.push($opcode, $modrm);
+            my $bin = Buf.new($modrm);
             $bin ~= $sib if $sib;
             $bin ~= $disp_bytes if $disp_bytes;
             return $bin;
         }
-    }
-    elsif $type eq 'reg-reg-imm8' || $type eq 'reg-reg-imm16' {
-        my $dst = $node.operands[0];
-        my $src = $node.operands[1];
-        my $imm = self.eval-to-int($node.operands[2], %env);
-        my $bin = Buf.new();
-        if self.bit_mode == 16 && ($dst.width == 32 || $src.width == 32) { $bin.push(0x66); }
-        my $opcode = %info<opcode>.parse-base(16);
-        my $modrm = pack-modrm(mod => 3, reg => $dst.index, rm => $src.index);
-        $bin.push($opcode, $modrm);
-        if $type eq 'reg-reg-imm8' { $bin.push($imm % 256); }
-        else {
-            $bin.push($imm % 256, ($imm +> 8) % 256);
-            if $dst.width == 32 { $bin.push(($imm +> 16) % 256, ($imm +> 24) % 256); }
+        when 'mem-imm8' | 'mem-imm16' | 'mem' {
+            my $mem_op = @ops.grep(Memory)[0];
+            my ($mod, $rm, $disp_bytes, $sib, $needs_67) = self.encode_mem_op($mem_op, %env);
+            my $modrm = pack-modrm(mod => $mod, reg => (%info<extension> // 0), rm => $rm);
+            my $bin = Buf.new($modrm);
+            $bin ~= $sib if $sib;
+            $bin ~= $disp_bytes if $disp_bytes;
+            return $bin;
         }
-        return $bin;
-    }
-    elsif $type eq 'reg-reg-2' {
-        my $dst = $node.operands[0];
-        my $src = $node.operands[1];
-        my $bin = Buf.new();
-        if self.bit_mode == 16 && ($dst.width == 32 || $src.width == 32) { $bin.push(0x66); }
-        my $op_hex = %info<opcode>;
-        while $op_hex.chars >= 2 {
-            $bin.push($op_hex.substr(0, 2).parse-base(16));
-            $op_hex = $op_hex.substr(2);
+        when 'reg-cr' | 'cr-reg' {
+            my $reg_op = @ops.grep({ $_ ~~ Register && !$_.is-control })[0];
+            my $cr_op = @ops.grep({ $_ ~~ Register && $_.is-control })[0];
+            my $modrm = pack-modrm(mod => 3, reg => $cr_op.index, rm => $reg_op.index);
+            return Buf.new($modrm);
         }
-        my $modrm = pack-modrm(mod => 3, reg => $dst.index, rm => $src.index);
-        $bin.push($modrm);
-        return $bin;
+        when 'reg-reg-imm8' | 'reg-reg-imm16' {
+            my $modrm = pack-modrm(mod => 3, reg => @ops[0].index, rm => @ops[1].index);
+            return Buf.new($modrm);
+        }
     }
     return Buf.new();
+}
+
+method encode-immediate($node, %info, %env) {
+    my $type = %info<type> // '';
+    my @ops = $node.operands;
+    my $bin = Buf.new();
+
+    given $type {
+        when 'reg-imm8' | 'mem-imm8' | 'imm8' | 'imm8-short' | 'reg-reg-imm8' {
+            my $imm_op = @ops.grep(Immediate)[0];
+            if $imm_op {
+                my $val = self.eval-to-int($imm_op, %env);
+                $bin.push($val % 256);
+            }
+        }
+        when 'reg-imm16' | 'mem-imm16' | 'reg-reg-imm16' | 'short-imm' {
+            my $imm_op = @ops.grep(Immediate)[0];
+            my $val = self.eval-to-int($imm_op, %env);
+            my $width = %info<width>;
+            if !$width {
+                if @ops.grep({ $_ ~~ Register && $_.width == 32 }) {
+                    $width = 32;
+                } elsif @ops.grep({ $_ ~~ Register && $_.width == 16 }) {
+                    $width = 16;
+                } else {
+                    $width = (self.bit_mode == 16 ?? 16 !! 32);
+                }
+            }
+
+            $bin.push($val % 256);
+            if $width >= 16 {
+                $bin.push(($val +> 8) % 256);
+            }
+            if $width == 32 {
+                $bin.push(($val +> 16) % 256, ($val +> 24) % 256);
+            }
+        }
+        when 'short-jump' {
+            my $target = self.eval-to-int(@ops[0], %env);
+            my $offset = $target - (%env<PC> + 2);
+            $bin.push($offset % 256);
+        }
+        when 'near-jump' {
+            my $target = self.eval-to-int(@ops[0], %env);
+            my $inst_size = (self.bit_mode == 16 ?? 3 !! 5);
+            my $offset = $target - (%env<PC> + $inst_size);
+            $bin.push($offset % 256, ($offset +> 8) % 256);
+            if self.bit_mode == 32 {
+                $bin.push(($offset +> 16) % 256, ($offset +> 24) % 256);
+            }
+        }
+        when 'far-jump' {
+            my $op = @ops[0];
+            my $selector = self.eval-to-int($op.selector, %env);
+            my $offset = self.eval-to-int($op.offset, %env);
+            my $use_32bit = (self.bit_mode == 32 || ($op.size_prefix // '') eq 'DWORD');
+            
+            $bin.push($offset % 256, ($offset +> 8) % 256);
+            if $use_32bit {
+                $bin.push(($offset +> 16) % 256, ($offset +> 24) % 256);
+            }
+            $bin.push($selector % 256, ($selector +> 8) % 256);
+        }
+    }
+    return $bin;
 }
 
 method encode_mem_op($mem, %env) {
