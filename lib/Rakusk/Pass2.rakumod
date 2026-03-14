@@ -16,14 +16,7 @@ class Pass2 is export {
             }
 
             my %env = symbols => %symbols, PC => $pc;
-
-            my $bin;
-            if $node ~~ InstructionNode {
-                $bin = $node.encode(%regs, %env);
-            }
-            elsif $node ~~ PseudoNode {
-                $bin = $node.encode(%env);
-            }
+            my $bin = self!encode-node($node, %regs, %env);
 
             if $bin.defined {
                 $!output ~= $bin;
@@ -31,5 +24,96 @@ class Pass2 is export {
             }
         }
         return $!output;
+    }
+
+    method !encode-node($node, %regs, %env) {
+        if $node ~~ InstructionNode {
+            return self!encode-instruction($node, %regs, %env);
+        }
+        elsif $node ~~ PseudoNode {
+            return self!encode-pseudo($node, %env);
+        }
+        return Buf.new();
+    }
+
+    method !encode-instruction($node, %regs, %env) {
+        my %info = $node.info;
+        if %info<type> eq 'no-op' {
+            return Buf.new(%info<opcode>.parse-base(16));
+        }
+        elsif %info<type> eq 'reg-imm8' {
+            my $reg_name = $node.operands[0].Str.uc;
+            my $imm_val = self!eval-to-int($node.operands[1], %env);
+            my $opcode = %info<base_opcode>.parse-base(16) + %regs{$reg_name};
+            return Buf.new($opcode, $imm_val % 256);
+        }
+        return Buf.new();
+    }
+
+    method !encode-pseudo($node, %env) {
+        my $bin = Buf.new();
+        my $current_pc = %env<PC> // 0;
+
+        given $node.mnemonic {
+            when 'DB' {
+                for $node.operands -> $op {
+                    if $op ~~ Immediate {
+                        my $res = $op.expr.eval(%env);
+                        if $res ~~ NumberExp {
+                            $bin.push($res.value % 256);
+                        } else {
+                            my $s = $op.Str;
+                            $bin ~= $s.encode('ascii');
+                        }
+                    } else {
+                        my $res = $op ~~ Expression ?? $op.eval(%env) !! $op;
+                        if $res ~~ NumberExp {
+                            $bin.push($res.value % 256);
+                        } elsif $res ~~ Str {
+                            $bin ~= $res.encode('ascii');
+                        }
+                    }
+                }
+            }
+            when 'DW' {
+                for $node.operands -> $op {
+                    my $val = self!eval-to-int($op, %env);
+                    $bin.push($val % 256);
+                    $bin.push(($val +> 8) % 256);
+                }
+            }
+            when 'DD' {
+                for $node.operands -> $op {
+                    my $val = self!eval-to-int($op, %env);
+                    $bin.push($val % 256);
+                    $bin.push(($val +> 8) % 256);
+                    $bin.push(($val +> 16) % 256);
+                    $bin.push(($val +> 24) % 256);
+                }
+            }
+            when 'RESB' {
+                my $size = self!eval-to-int($node.operands[0], %env);
+                $bin.push(0) for 1..$size;
+            }
+            when 'ALIGNB' {
+                my $boundary = self!eval-to-int($node.operands[0], %env);
+                my $padding = ($boundary - ($current_pc % $boundary)) % $boundary;
+                $bin.push(0) for 1..$padding;
+            }
+        }
+        return $bin;
+    }
+
+    method !eval-to-int($op, %env) {
+        if $op ~~ Immediate {
+            my $res = $op.expr.eval(%env);
+            return $res.value if $res ~~ NumberExp;
+        } elsif $op ~~ Expression {
+            my $res = $op.eval(%env);
+            return $res.value if $res ~~ NumberExp;
+        } elsif $op ~~ Int {
+            return $op;
+        }
+        return 0;
     }
 }

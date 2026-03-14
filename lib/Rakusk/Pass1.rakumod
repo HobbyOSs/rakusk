@@ -33,12 +33,73 @@ class Pass1 is export {
             my %env = symbols => %!symbols, PC => $!pc;
 
             if $node ~~ InstructionNode {
-                $!pc += $node.encode(%regs, %env).elems;
+                $!pc += self!size-of-instruction($node, %regs, %env);
             }
             elsif $node ~~ PseudoNode {
-                $!pc += $node.encode(%env).elems;
+                $!pc += self!size-of-pseudo($node, %env);
             }
         }
         return self;
+    }
+
+    method !size-of-instruction($node, %regs, %env) {
+        my %info = $node.info;
+        if %info<type> eq 'no-op' {
+            return 1;
+        }
+        elsif %info<type> eq 'reg-imm8' {
+            return 2;
+        }
+        return 0;
+    }
+
+    method !size-of-pseudo($node, %env) {
+        my $current_pc = %env<PC> // 0;
+        given $node.mnemonic {
+            when 'DB' {
+                my $size = 0;
+                for $node.operands -> $op {
+                    if $op ~~ Immediate {
+                        my $res = $op.expr.eval(%env);
+                        if $res ~~ NumberExp {
+                            $size += 1;
+                        } else {
+                            $size += $op.Str.chars;
+                        }
+                    } else {
+                        my $res = $op ~~ Expression ?? $op.eval(%env) !! $op;
+                        if $res ~~ NumberExp {
+                            $size += 1;
+                        } elsif $res ~~ Str {
+                            $size += $res.chars;
+                        }
+                    }
+                }
+                return $size;
+            }
+            when 'DW' { return $node.operands.elems * 2; }
+            when 'DD' { return $node.operands.elems * 4; }
+            when 'RESB' {
+                return self!eval-to-int($node.operands[0], %env);
+            }
+            when 'ALIGNB' {
+                my $boundary = self!eval-to-int($node.operands[0], %env);
+                return ($boundary - ($current_pc % $boundary)) % $boundary;
+            }
+        }
+        return 0;
+    }
+
+    method !eval-to-int($op, %env) {
+        if $op ~~ Immediate {
+            my $res = $op.expr.eval(%env);
+            return $res.value if $res ~~ NumberExp;
+        } elsif $op ~~ Expression {
+            my $res = $op.eval(%env);
+            return $res.value if $res ~~ NumberExp;
+        } elsif $op ~~ Int {
+            return $op;
+        }
+        return 0;
     }
 }
