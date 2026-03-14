@@ -14,6 +14,8 @@
 │       ├── Pass1.rakumod   # AST構築
 │       └── Pass2.rakumod   # バイナリ生成
 ├── t/                  # ユニットテスト
+├── examples/           # アセンブリ言語のサンプルコード
+├── scripts/            # 開発用補助スクリプト
 └── memory-bank/        # プロジェクト知識ベース
 ```
 
