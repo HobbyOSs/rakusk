@@ -8,9 +8,13 @@ class Register does Operand is export {
     has $.name;
     has $.width;
     has $.index;
+    has $.type; # 'general', 'segment', 'control'
     method Str { $!name }
     method is-segment {
-        return $!name.uc ~~ /^(ES|CS|SS|DS|FS|GS)$/;
+        return ($!type // '') eq 'segment' || $!name.uc ~~ /^(ES|CS|SS|DS|FS|GS)$/;
+    }
+    method is-control {
+        return ($!type // '') eq 'control' || $!name.uc ~~ /^CR[0234]$/;
     }
 }
 
@@ -63,8 +67,11 @@ class Memory does Operand is export {
 class SegmentedAddress does Operand is export {
     has Expression $.selector;
     has Expression $.offset;
+    has $.size_prefix is rw;
 
     method Str {
-        $!selector.Str ~ ":" ~ $!offset.Str;
+        my $s = $!size_prefix ?? $!size_prefix ~ " " !! "";
+        $s ~= $!selector.Str ~ ":" ~ $!offset.Str;
+        $s;
     }
 }

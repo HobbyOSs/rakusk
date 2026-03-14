@@ -28,7 +28,7 @@ class ImmExp does Expression is export {
     has Factor $.factor;
     method eval(%env) {
         my $val = $!factor.eval(%env);
-        if $val ~~ Int | Str {
+        if $val ~~ Int {
             return NumberExp.new(value => $val);
         }
         return self;

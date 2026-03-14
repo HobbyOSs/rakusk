@@ -22,8 +22,9 @@ for %MNEMONIC_MAP.kv -> $m, $variants {
         # 1. pseudo (最優先)
         # 2. short-imm
         # 3. short-jump
-        # 4. base_opcode を持つもの (MOV AX, imm 等)
-        # 5. その他
+        # 4. moffs (A0-A3)
+        # 5. base_opcode を持つもの (MOV AX, imm 等)
+        # 6. その他
         my $v_a = $^a;
         my $v_b = $^b;
         my $score_a = do {
@@ -31,16 +32,18 @@ for %MNEMONIC_MAP.kv -> $m, $variants {
             if $type eq 'pseudo' { 0 }
             elsif $type eq 'short-imm' { 1 }
             elsif $type eq 'short-jump' { 2 }
-            elsif $v_a<base_opcode> { 3 }
-            else { 4 }
+            elsif $type ~~ /moffs/ { 3 }
+            elsif $v_a<base_opcode> { 4 }
+            else { 5 }
         };
         my $score_b = do {
             my $type = $v_b<type> // '';
             if $type eq 'pseudo' { 0 }
             elsif $type eq 'short-imm' { 1 }
             elsif $type eq 'short-jump' { 2 }
-            elsif $v_b<base_opcode> { 3 }
-            else { 4 }
+            elsif $type ~~ /moffs/ { 3 }
+            elsif $v_b<base_opcode> { 4 }
+            else { 5 }
         };
         $score_a <=> $score_b;
     }) ];
@@ -132,7 +135,7 @@ grammar Assembler is export {
 
     rule addressing {
         '['
-        [ <base=reg> | <base=ident> ]?
+        [ <base=reg> | <disp=exp> ]?
         [
             <.ws> <[ + \- ]> <.ws>
             [
@@ -196,6 +199,51 @@ class AssemblerActions is export {
         my @variants = |(%MNEMONIC_MAP{$m} // []);
         my @ops = $<operand_list>.made;
 
+        # Special case for jumps with absolute addresses
+        if $m eq 'JMP' && @ops.elems == 1 && @ops[0] ~~ Immediate {
+             my $ev = @ops[0].expr.eval({});
+             if $ev ~~ NumberExp {
+                 # Prefer near-jump for absolute numeric targets
+                 my $near = @variants.grep({ ($_<type> // '') eq 'near-jump' })[0];
+                 if $near {
+                     make InstructionNode.new(mnemonic => $m, operands => @ops, info => $near);
+                     return;
+                 }
+             }
+        }
+
+        # Special case for arith-logic with imm8
+        if $m ~~ /^(ADD|SUB|CMP|AND|OR|XOR|ADC|SBB)$/ && @ops.elems == 2 && @ops[1] ~~ Immediate && @ops[0] ~~ Register {
+             my $ev = @ops[1].expr.eval({});
+             if $ev ~~ NumberExp && $ev.value.abs <= 127 {
+                 # Prefer short-form (reg-imm8, e.g., 83 /0 ib) if available for this width
+                 # But for AL/AX/EAX, there's also short-imm (e.g., 04 ib, 05 iw)
+                 # harib00i seems to prefer 83 form for OR EAX, 1.
+                 my @matches = @variants.grep({ 
+                     (($_<type> // '') eq 'short-imm' || ($_<type> // '') eq 'reg-imm8')
+                     && ($_<width> // 0) == @ops[0].width
+                     && (!$_<short_reg> || $_<short_reg>.uc eq @ops[0].name.uc)
+                 });
+                 # Size comparison for best variant
+                 my $best;
+                 my $width = @ops[0].width;
+                 if $width == 8 {
+                     # short-imm (2 bytes) vs reg-imm8 (3 bytes)
+                     $best = @matches.grep({ ($_<type> // '') eq 'short-imm' })[0] // @matches[0];
+                 } elsif $width == 16 {
+                     # short-imm (3 bytes) vs reg-imm8 (3 bytes)
+                     $best = @matches.grep({ ($_<type> // '') eq 'short-imm' })[0] // @matches[0];
+                 } else { # 32-bit
+                     # short-imm (6 bytes: 66 05 id) vs reg-imm8 (4 bytes: 66 83 /x ib)
+                     $best = @matches.grep({ ($_<type> // '') eq 'reg-imm8' })[0] // @matches[0];
+                 }
+                 if $best {
+                     make InstructionNode.new(mnemonic => $m, operands => @ops, info => $best);
+                     return;
+                 }
+             }
+        }
+
         my $info = self!select-variant($m, @variants, @ops);
 
         if $info && ($info<type> // '') eq 'pseudo' {
@@ -231,8 +279,9 @@ class AssemblerActions is export {
             when 'reg-reg' {
                 return False unless @ops.elems == 2;
                 return False unless @ops[0] ~~ Register && @ops[1] ~~ Register;
-                return @ops[0].width == @ops[1].width
-                    && !@ops[0].is-segment && !@ops[1].is-segment;
+                return (@ops[0].width == @ops[1].width || (@ops[0].width == 16 && @ops[1].width == 32) || (@ops[0].width == 32 && @ops[1].width == 16))
+                    && !@ops[0].is-segment && !@ops[1].is-segment
+                    && !@ops[0].is-control && !@ops[1].is-control;
             }
             when 'sreg-reg' {
                 return False unless @ops.elems == 2;
@@ -252,6 +301,20 @@ class AssemblerActions is export {
                 return @ops.elems == 2 && @ops[0] ~~ Memory && @ops[1] ~~ Register
                     && ($v_width == 0 || @ops[1].width == $v_width);
             }
+            when 'mem-imm8' {
+                return False unless @ops.elems == 2 && @ops[0] ~~ Memory && @ops[1] ~~ Immediate;
+                if @ops[0].size_prefix {
+                    return @ops[0].size_prefix eq 'BYTE';
+                }
+                return $v_width == 8;
+            }
+            when 'mem-imm16' {
+                return False unless @ops.elems == 2 && @ops[0] ~~ Memory && @ops[1] ~~ Immediate;
+                if @ops[0].size_prefix {
+                    return @ops[0].size_prefix eq 'WORD' || @ops[0].size_prefix eq 'DWORD';
+                }
+                return $v_width == 16 || $v_width == 32;
+            }
             when 'reg-imm8' {
                 return False unless @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Immediate;
                 return False if $v<short_reg> && @ops[0].name.uc ne $v<short_reg>.uc;
@@ -260,7 +323,7 @@ class AssemblerActions is export {
             when 'reg-imm16' {
                 return False unless @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Immediate;
                 return False if $v<short_reg> && @ops[0].name.uc ne $v<short_reg>.uc;
-                return @ops[0].width == 16;
+                return @ops[0].width == 16 || @ops[0].width == 32;
             }
             when 'reg-imm32' {
                 return @ops.elems == 2 && @ops[0] ~~ Register && @ops[0].width == 32 && @ops[1] ~~ Immediate;
@@ -273,8 +336,15 @@ class AssemblerActions is export {
             when 'short-jump' | 'near-jump' | 'imm8' {
                 return @ops.elems == 1 && @ops[0] ~~ Immediate;
             }
+            when 'imm8-short' {
+                return @ops.elems == 2 && @ops[0] ~~ Immediate && @ops[1] ~~ Register
+                    && (!$v<short_reg> || @ops[1].name eq $v<short_reg>.uc);
+            }
             when 'far-jump' {
                 return @ops.elems == 1 && @ops[0] ~~ SegmentedAddress;
+            }
+            when 'mem' {
+                return @ops.elems == 1 && @ops[0] ~~ Memory;
             }
             when 'reg-cr' {
                 return @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Register
@@ -283,6 +353,31 @@ class AssemblerActions is export {
             when 'cr-reg' {
                 return @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Register
                     && (%REGS_DATA{@ops[0].name.uc}<type> // '') eq 'control';
+            }
+            when 'al-moffs' {
+                return @ops.elems == 2 && @ops[0] ~~ Register && @ops[0].name eq 'AL' && @ops[1] ~~ Memory
+                    && !@ops[1].base && !@ops[1].index;
+            }
+            when 'ax-moffs' {
+                return @ops.elems == 2 && @ops[0] ~~ Register && @ops[0].name eq 'AX' && @ops[1] ~~ Memory
+                    && !@ops[1].base && !@ops[1].index;
+            }
+            when 'moffs-al' {
+                return @ops.elems == 2 && @ops[0] ~~ Memory && @ops[1] ~~ Register && @ops[1].name eq 'AL'
+                    && !@ops[0].base && !@ops[0].index;
+            }
+            when 'moffs-ax' {
+                return @ops.elems == 2 && @ops[0] ~~ Memory && @ops[1] ~~ Register && @ops[1].name eq 'AX'
+                    && !@ops[0].base && !@ops[0].index;
+            }
+            when 'reg-reg-imm8' {
+                return @ops.elems == 3 && @ops[0] ~~ Register && @ops[1] ~~ Register && @ops[2] ~~ Immediate;
+            }
+            when 'reg-reg-imm16' {
+                return @ops.elems == 3 && @ops[0] ~~ Register && @ops[1] ~~ Register && @ops[2] ~~ Immediate;
+            }
+            when 'reg-reg-2' {
+                return @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Register;
             }
             when 'no-op' {
                 return @ops.elems == 0;
@@ -300,6 +395,9 @@ class AssemblerActions is export {
             my $sel = $selector_expr ~~ Immediate ?? $selector_expr.expr !! $selector_expr;
             my $off = $offset_expr ~~ Immediate ?? $offset_expr.expr !! $offset_expr;
             my $sa = SegmentedAddress.new(selector => $sel, offset => $off);
+            if $<size_prefix> {
+                $sa.size_prefix = $<size_prefix>.Str.uc;
+            }
             make $sa;
         } else {
             my $made = $<single>.made;
@@ -362,34 +460,34 @@ class AssemblerActions is export {
             make $<addressing>.made;
         }
         else {
-            my $factor;
+            my $f;
             if $<hex_lit> {
-                $factor = HexFactor.new(value => $<hex_lit>.Str);
+                $f = HexFactor.new(value => $<hex_lit>.Str);
             }
             elsif $<num_lit> {
-                $factor = NumberFactor.new(value => $<num_lit>.Int);
+                $f = NumberFactor.new(value => $<num_lit>.Int);
             }
             elsif $<string_lit> {
                 my $s = $<string_lit>.Str;
                 if $/.Str.starts-with("'") {
                     if $s.chars == 1 {
-                        $factor = CharFactor.new(value => $s);
+                        $f = CharFactor.new(value => $s);
                     } else {
-                        $factor = StringFactor.new(value => $s);
+                        $f = StringFactor.new(value => $s);
                     }
                 } else {
-                    $factor = StringFactor.new(value => $s);
+                    $f = StringFactor.new(value => $s);
                 }
             }
             elsif $<ident> {
-                $factor = IdentFactor.new(value => $<ident>.Str);
+                $f = IdentFactor.new(value => $<ident>.Str);
             }
             elsif $/.Str eq '$' {
-                $factor = IdentFactor.new(value => '$');
+                $f = IdentFactor.new(value => '$');
             }
 
-            if $factor {
-                make ImmExp.new(factor => $factor);
+            if $f {
+                make ImmExp.new(factor => $f);
             }
         }
     }
@@ -397,11 +495,7 @@ class AssemblerActions is export {
     method addressing($/) {
         my $base;
         if $<base> {
-            if $<base>.made ~~ Register {
-                $base = $<base>.made;
-            } else {
-                $base = $<base>.Str; # symbol
-            }
+            $base = $<base>.made;
         }
 
         my $index;
@@ -440,7 +534,8 @@ class AssemblerActions is export {
         make Register.new(
             name => $name,
             width => $reg_info<width>,
-            index => $reg_info<index>
+            index => $reg_info<index>,
+            type => $reg_info<type> // 'general'
         );
     }
 }

@@ -3,7 +3,7 @@ use Test;
 use lib 'lib';
 use Rakusk;
 
-plan 4;
+plan 5;
 
 subtest "Basic Instructions" => {
     is-deeply assemble("CLI").list, (0xFA,), "CLI (no-op)";
@@ -15,9 +15,13 @@ subtest "Basic Instructions" => {
 subtest "MOV Instructions" => {
     is-deeply assemble("MOV AL, 0x12").list, (0xB0, 0x12), "MOV AL, 0x12 (reg-imm8)";
     is-deeply assemble("MOV CL, 10").list, (0xB1, 10), "MOV CL, 10 (decimal imm8)";
-    is-deeply assemble("MOV EAX, EBX").list, (0x89, 0xD8), "MOV EAX, EBX (reg-reg)";
-    is-deeply assemble("MOV EBX, EAX").list, (0x89, 0xC3), "MOV EBX, EAX (reg-reg)";
-    is-deeply assemble("MOV ESI, EDI").list, (0x89, 0xFE), "MOV ESI, EDI (reg-reg)";
+    is-deeply assemble("MOV AX, BX").list, (0x89, 0xD8), "MOV AX, BX (reg-reg)";
+    is-deeply assemble("MOV BX, AX").list, (0x89, 0xC3), "MOV BX, AX (reg-reg)";
+    is-deeply assemble("MOV SI, DI").list, (0x89, 0xFE), "MOV SI, DI (reg-reg)";
+}
+
+subtest "32-bit Registers in 16-bit mode" => {
+    is-deeply assemble("MOV EAX, EBX").list, (0x66, 0x89, 0xD8), "MOV EAX, EBX (needs 66h)";
 }
 
 subtest "Multiple Lines" => {
