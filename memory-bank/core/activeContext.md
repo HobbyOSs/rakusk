@@ -2,16 +2,13 @@
 # Active Context
 
 ## 最近の変更点
-- `lib/Rakusk/Grammar.rakumod` の文法定義を拡張・修正
-    - `TOP` と `line` の空白処理を改善
-    - アドレッシングモード (`addressing`) を拡張し、`base + index * scale + offset/symbol` の形式をサポート
-    - `.skip` ディレクティブを追加
-    - `offset` に負の数を許可するよう `addressing` トークンを調整
-- 新しいテストファイル `t/grammar.t` を追加し、`gosk` の `grammar_test.go` を参考にした広範なテストケースを実装
+- `lib/Rakusk/AST.rakumod` において、`Register`, `Immediate` クラスおよび `Operand` ロールを導入し、ASTノード（`LabelStmt`, `DeclareStmt`, `ConfigStmt`, `InstructionNode`, `PseudoNode`）を構造化。
+- `lib/Rakusk/Grammar.rakumod` を `memory-bank/docs/spec.md` の仕様に厳密に準拠するよう修正。当初実装していた仕様外の構文（アドレッシングモードやドット開始のディレクティブ）を削除。
+- `t/grammar.t` と `t/ast.t` を作成・更新し、仕様に基づいたパースとAST構築が正しく行われることを確認。
 
 ## 現在の焦点
-- 文法パースの安定性向上とテスト網羅率の確保
+- ASTをベースにしたPass1（シンボル解決・ラベル収集）の再構築。
 
 ## 次のステップ
-- パースされた結果から AST を構築する処理の確認と強化
-- Pass1, Pass2 への文法拡張の影響確認
+- `lib/Rakusk/Pass1.rakumod` の更新：新しいAST構造に対応したパス1の実装。
+- シンボルテーブルの管理ロジックの改善。

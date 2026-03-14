@@ -10,7 +10,8 @@ class Pass2 is export {
         my $pc = 0;
         for @!ast -> $node {
             if $node ~~ PseudoNode && $node.mnemonic eq 'ORG' {
-                $pc = $node.operands[0];
+                my $val = $node.operands[0];
+                $pc = $val ~~ Immediate ?? $val.Int !! $val.Int;
                 next;
             }
 

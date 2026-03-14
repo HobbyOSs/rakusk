@@ -4,4 +4,4 @@ PROVE = prove
 .PHONY: test
 
 test:
-	$(RAKU) -Ilib t/assembler.t
+	$(PROVE) -e "$(RAKU) -Ilib" t/*.t

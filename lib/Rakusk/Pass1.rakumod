@@ -24,18 +24,23 @@ class Pass1 is export {
 
             # ORG 命令の特別な処理
             if $node ~~ PseudoNode && $node.mnemonic eq 'ORG' {
-                $!pc = $node.operands[0];
+                my $val = $node.operands[0];
+                $!pc = $val ~~ Immediate ?? $val.Int !! $val.Int;
                 next;
             }
 
             # 動的なオペランド（$など）の解決
             if $node.can('operands') {
-                for $node.operands.kv -> $i, $op {
-                    if $op eq '$' {
-                        $node.operands[$i] = $!pc;
+                my @ops := $node.operands;
+                for @ops.kv -> $i, $op {
+                    # $op が Operand (Register, Immediate) の場合
+                    my $val = $op ~~ Str ?? $op !! $op.Str;
+                    if $val eq '$' {
+                        @ops[$i] = Rakusk::AST::Immediate.new(value => $!pc);
                     }
-                    elsif %!symbols{$op}:exists {
-                        $node.operands[$i] = %!symbols{$op};
+                    elsif %!symbols{$val}:exists {
+                        my $sym_val = %!symbols{$val};
+                        @ops[$i] = $sym_val ~~ Rakusk::AST::Immediate ?? $sym_val !! Rakusk::AST::Immediate.new(value => $sym_val);
                     }
                 }
             }

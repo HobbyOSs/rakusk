@@ -19,6 +19,9 @@
 - [x] `MOV reg, imm8` の基本実装
 - [x] `gosk` の `spec.md` を取り込み
 - [x] キャッシュ機能付き GitHub Actions CI の導入 (JSON::Fastの依存関係追加含む)
+- [x] `lib/Rakusk/AST.rakumod` における型付きASTノードの導入
+- [x] `lib/Rakusk/Grammar.rakumod` の `spec.md` 準拠修正
+- [x] 文法およびASTの単体テストの拡充 (`t/grammar.t`, `t/ast.t`)
 
 ## 未実装 / 今後の予定
 - [ ] ModR/M バイト生成ロジックの抽象化
