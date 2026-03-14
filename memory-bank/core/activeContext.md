@@ -1,41 +1,17 @@
-# Active Context - rakusk
+<!-- activeContext.md -->
+# Active Context
 
-## 現在の作業焦点
-プロジェクトの初期化が完了し、Rakuの実行基盤（パイプライン）の構築を開始する段階。
-「AI（Cline）が自己増殖のサイクルを回すための動的実行基盤」の設計と実装に注力する。
+## 最近の変更点
+- `lib/Rakusk/Grammar.rakumod` の文法定義を拡張・修正
+    - `TOP` と `line` の空白処理を改善
+    - アドレッシングモード (`addressing`) を拡張し、`base + index * scale + offset/symbol` の形式をサポート
+    - `.skip` ディレクティブを追加
+    - `offset` に負の数を許可するよう `addressing` トークンを調整
+- 新しいテストファイル `t/grammar.t` を追加し、`gosk` の `grammar_test.go` を参考にした広範なテストケースを実装
 
-## 自己増殖型開発（Self-Evolving Development）のパイプライン構想
-
-### Step 1: 最小の「文法」と「バイナリ出力」の結合 (完了)
-- `Grammar` で命令（例: `CLI`）を定義し、`Action` でバイナリ（例: `0xFA`）を生成。
-
-### Step 2: 外部ツールによる「答え合わせ」の自動化 (完了)
-- `ndisasm` を利用した自動検証パイプラインの構築。
-
-### Step 3: 命令定義の「データ駆動」化とモジュール化 (完了)
-- JSON定義ファイル (`data/instructions.json`) から動的に文法を生成。
-- アセンブラロジックをモジュール (`lib/Rakusk.rakumod`) に抽出。
-- ユニットテスト (`t/assembler.t`) の導入。
-
-### Step 4: オペランド（引数）解析の拡充と ModR/M の抽象化 (進行中)
-- `MOV reg, imm8` などの引数付き命令のサポート。
-- x86の複雑なビット計算を Raku 側の関数に隠蔽。
-
-### Step 5: ブートセクタとしての完成度
-- 512バイトのパディングとブートシグネチャ（`0x55`, `0xAA`）の自動付与。
-
-## 直近のTODO
-- [x] `Grammar` と `Actions` のモジュール化とユニットテスト導入。
-- [x] `gosk` を参考にした大量の1バイト命令の追加。
-- [x] `gosk` の `spec.md` を Memory Bank に取り込み。
-- [x] キャッシュ機能付き GitHub Actions CI の設定。
-- [ ] ModR/M バイト生成エンジンの設計と実装。
+## 現在の焦点
+- 文法パースの安定性向上とテスト網羅率の確保
 
 ## 次のステップ
-- [x] Pass 1 / Pass 2 のモジュール分割による設計の洗練。
-- [x] Pass 2 アセンブラ基盤（AST中間表現）の導入。
-- [x] ファイルおよび標準入力からの解析サポート。
-- [x] Pass 1 / Pass 2 の基本クラス構造の定義（ラベル解決の準備）。
-- [x] プロジェクト構造の整理（examples/, scripts/ ディレクトリの導入）。
-- [ ] `MOV reg, reg` などの ModR/M を必要とする命令の実装。
-- [ ] ブートシグネチャ自動付与機能の追加。
+- パースされた結果から AST を構築する処理の確認と強化
+- Pass1, Pass2 への文法拡張の影響確認
