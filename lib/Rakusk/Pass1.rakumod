@@ -7,6 +7,8 @@ class Pass1 is export {
     has @.ast;
     has Int $.pc = 0;
     has Int $.bit_mode = 16;
+    has @.global_symbols;
+    has @.extern_symbols;
 
     method evaluate(@ast, %regs) {
         @!ast = @ast;
@@ -14,6 +16,9 @@ class Pass1 is export {
         # パス1: ラベル・定数の収集とPCの計算
         $!pc = 0;
         $!bit_mode = 16;
+        @!global_symbols = [];
+        @!extern_symbols = [];
+
         for @!ast -> $node {
             my %env = symbols => %!symbols, PC => $!pc;
 
@@ -48,34 +53,134 @@ class Pass1 is export {
 
     method !process-instruction($node, %regs, %env) {
         my $mnemonic = $node.mnemonic;
-        my @operands = $node.operands;
-
+        
         # ジャンプ命令判定
-        if $mnemonic ~~ /^[ J | CALL ]/ {
+        if $mnemonic ~~ /^ J | ^ CALL / {
             self!process-JMP($node, %regs, %env);
             return;
         }
 
-        # TODO: 将来的にはハンドラマップ形式にするが、まずはシンプルに分岐
-        if $mnemonic eq 'MOV' {
-            self!process-MOV($node, %regs, %env);
-        }
-        else {
-            # デフォルト処理（1バイト命令など）
-            my $size = self!size-of-instruction($node, %regs, %env);
-            $!pc += $size;
+        # ハンドラ振り分け
+        given $mnemonic {
+            when 'MOV' { self!process-MOV($node, %regs, %env); }
+            when 'RET' { self!process-RET($node, %regs, %env); }
+            when 'INT' { self!process-INT($node, %regs, %env); }
+            when 'IN'  { self!process-IN($node, %regs, %env); }
+            when 'OUT' { self!process-OUT($node, %regs, %env); }
+            when 'LGDT' { self!process-LGDT($node, %regs, %env); }
+            # 算術・論理演算命令
+            when 'ADD' | 'ADC' | 'SUB' | 'SBB' | 'CMP' | 'INC' | 'DEC' | 'NEG' | 'MUL' | 'IMUL' | 'DIV' | 'IDIV' |
+                 'AND' | 'OR' | 'XOR' | 'NOT' | 'SHR' | 'SHL' | 'SAR' {
+                self!process-arith-logic($node, %regs, %env);
+            }
+            # PUSH/POP
+            when 'PUSH' | 'POP' {
+                self!process-push-pop($node, %regs, %env);
+            }
+            default {
+                # パラメータなし命令またはデフォルト処理
+                self!process-generic-inst($node, %regs, %env);
+            }
         }
     }
 
     method !process-MOV($node, %regs, %env) {
-        # gosk のロジックを参考に、オペランドに応じたサイズ計算を強化する準備
-        # 現在は既存の size-of-instruction に委譲
         my $size = self!size-of-instruction($node, %regs, %env);
+        $!pc += $size;
+    }
+
+    method !process-INT($node, %regs, %env) {
+        my $size = 2; # INT imm8
+        if $node.operands.elems > 0 {
+            my $val = self!eval-to-any($node.operands[0], %env);
+            if $val == 3 {
+                $size = 1; # INT 3 (CC)
+            }
+        }
+        $!pc += $size;
+    }
+
+    method !process-IN($node, %regs, %env) {
+        my $size = self!size-of-instruction($node, %regs, %env);
+        $!pc += $size;
+    }
+
+    method !process-OUT($node, %regs, %env) {
+        my $size = self!size-of-instruction($node, %regs, %env);
+        $!pc += $size;
+    }
+
+    method !process-LGDT($node, %regs, %env) {
+        # LGDT m16:32 (0F 01 /2)
+        # とりあえず 5~7 バイト程度を想定 (goskでは dispサイズに依存)
+        my $size = 5; 
+        $!pc += $size;
+    }
+
+    method !process-arith-logic($node, %regs, %env) {
+        my $size = self!size-of-instruction($node, %regs, %env);
+        $!pc += $size;
+    }
+
+    method !process-push-pop($node, %regs, %env) {
+        my $size = self!size-of-instruction($node, %regs, %env);
+        $!pc += $size;
+    }
+
+    method !process-generic-inst($node, %regs, %env) {
+        my $mnemonic = $node.mnemonic;
+        my $size = 1;
+
+        # gosk の processNoParam にある例外対応
+        given $mnemonic {
+            when 'IRETQ' | 'SYSENTER' | 'SYSEXIT' | 'SYSCALL' | 'SYSRET' | 'UD2' {
+                $size = 2;
+            }
+            when /^F/ {
+                # x87 命令の多くは 2バイト
+                $size = 2;
+            }
+            default {
+                # JSON定義から取得を試みる
+                my $info_size = self!size-of-instruction($node, %regs, %env);
+                $size = $info_size if $info_size > 0;
+            }
+        }
+        $!pc += $size;
+    }
+
+    method !process-RET($node, %regs, %env) {
+        # RET (C3) は 1バイト
+        # RET imm16 (C2 iw) は 3バイト
+        my $size = 1;
+        if $node.operands.elems > 0 {
+            $size = 3;
+        }
         $!pc += $size;
     }
 
     method !process-JMP($node, %regs, %env) {
         my $mnemonic = $node.mnemonic;
+        my @operands = $node.operands;
+
+        # オペランドが評価可能かチェック
+        if @operands.elems > 0 {
+            my $op = @operands[0];
+            # TODO: SegmentedAddress (FAR jump) の判定
+            # 現時点では AST に SegmentedAddress が未定義のため一旦コメントアウト
+            # if $op ~~ SegmentedAddress {
+            #     # FAR Jump/Call
+            #     # 16-bit: 66 EA ptr16:16 or EA ptr16:16
+            #     # 32-bit: EA ptr16:32
+            #     if $!bit_mode == 16 {
+            #         $!pc += 5; # EA ptr16:16
+            #     } else {
+            #         $!pc += 7; # EA ptr16:32
+            #     }
+            #     return;
+            # }
+        }
+
         my $size = self!estimate-jump-size($mnemonic, $!bit_mode);
         $!pc += $size;
     }
@@ -83,21 +188,22 @@ class Pass1 is export {
     method !estimate-jump-size($mnemonic, $bit_mode) {
         if $bit_mode == 16 {
             if $mnemonic eq 'CALL' {
-                return 3; # near call
+                return 3; # near call (E8 cw)
             }
-            return 2; # short jump
+            # JMP/Jcc short を推定
+            return 2; # short jump (EB rb / 7x rb)
         }
         
         # 32bit/64bit モード
         if $mnemonic eq 'JMP' || $mnemonic eq 'CALL' {
-            return 5; # rel32
+            return 5; # near rel32 (E9/E8 cd)
         }
-        return 6; # Jcc rel32 (0F 8x cd)
+        # Jcc near (0F 8x cd)
+        return 6;
     }
 
     method !process-pseudo($node, %env) {
         my $mnemonic = $node.mnemonic;
-        my @operands = $node.operands;
 
         given $mnemonic {
             when 'ORG'    { self!process-ORG($node, %env); }
@@ -106,6 +212,8 @@ class Pass1 is export {
             when 'DD'     { self!process-DD($node, %env); }
             when 'RESB'   { self!process-RESB($node, %env); }
             when 'ALIGNB' { self!process-ALIGNB($node, %env); }
+            when 'GLOBAL' { self!process-GLOBAL($node, %env); }
+            when 'EXTERN' { self!process-EXTERN($node, %env); }
             default {
                 warn "Unknown pseudo-instruction: $mnemonic";
             }
@@ -123,12 +231,11 @@ class Pass1 is export {
             if $val ~~ Int {
                 $size += 1;
             } elsif $val ~~ Str {
-                $size += $val.chars;
+                $size += $val.encode('UTF-8').elems;
             } elsif $val ~~ NumberExp {
                 $size += 1;
             } else {
-                # ラベルなどの識別子の場合（Pass1では1バイトと仮定するか、エラーにするか）
-                # gosk ではラベルのアドレスの下位1バイトを格納するので 1 バイト
+                # ラベルなどの識別子の場合、gosk準拠で下位1バイトとする
                 $size += 1;
             }
         }
@@ -163,6 +270,25 @@ class Pass1 is export {
         }
     }
 
+    method !process-GLOBAL($node, %env) {
+        for $node.operands -> $op {
+            # オペランドは識別子であることを期待
+            if $op ~~ Immediate && $op.expr.factor ~~ IdentFactor {
+                my $name = $op.expr.factor.value;
+                @!global_symbols.push($name) unless $name leg any(@!global_symbols);
+            }
+        }
+    }
+
+    method !process-EXTERN($node, %env) {
+        for $node.operands -> $op {
+            if $op ~~ Immediate && $op.expr.factor ~~ IdentFactor {
+                my $name = $op.expr.factor.value;
+                @!extern_symbols.push($name) unless $name leg any(@!extern_symbols);
+            }
+        }
+    }
+
     method !size-of-instruction($node, %regs, %env) {
         my %info = $node.info;
         return 0 unless %info;
@@ -175,8 +301,6 @@ class Pass1 is export {
             when 'imm32' { return 5; }
             when 'short-jump' { return 2; }
         }
-        # 未知の命令タイプや複雑なアドレッシングモードの場合は、
-        # 将来的に ModR/M 計算ロジックを呼ぶ
         return 0;
     }
 
