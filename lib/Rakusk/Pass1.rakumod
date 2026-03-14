@@ -36,7 +36,8 @@ class Pass1 is export {
                 $!pc += self!size-of-instruction($node, %regs, %env);
             }
             elsif $node ~~ PseudoNode {
-                $!pc += self!size-of-pseudo($node, %env);
+                my $size = self!size-of-pseudo($node, %env);
+                $!pc += $size;
             }
         }
         return self;
@@ -59,20 +60,11 @@ class Pass1 is export {
             when 'DB' {
                 my $size = 0;
                 for $node.operands -> $op {
-                    if $op ~~ Immediate {
-                        my $res = $op.expr.eval(%env);
-                        if $res ~~ NumberExp {
-                            $size += 1;
-                        } else {
-                            $size += $op.Str.chars;
-                        }
-                    } else {
-                        my $res = $op ~~ Expression ?? $op.eval(%env) !! $op;
-                        if $res ~~ NumberExp {
-                            $size += 1;
-                        } elsif $res ~~ Str {
-                            $size += $res.chars;
-                        }
+                    my $val = self!eval-to-any($op, %env);
+                    if $val ~~ Int {
+                        $size += 1;
+                    } elsif $val ~~ Str {
+                        $size += $val.chars;
                     }
                 }
                 return $size;
@@ -91,13 +83,26 @@ class Pass1 is export {
     }
 
     method !eval-to-int($op, %env) {
+        my $res = self!eval-to-any($op, %env);
+        return $res if $res ~~ Int;
+        return 0;
+    }
+
+    method !eval-to-any($op, %env) {
         if $op ~~ Immediate {
             my $res = $op.expr.eval(%env);
-            return $res.value if $res ~~ NumberExp;
+            if $res ~~ NumberExp {
+                return $res.value;
+            } else {
+                return $op.expr.factor.eval(%env);
+            }
         } elsif $op ~~ Expression {
             my $res = $op.eval(%env);
-            return $res.value if $res ~~ NumberExp;
-        } elsif $op ~~ Int {
+            if $res ~~ NumberExp {
+                return $res.value;
+            }
+            return $res;
+        } elsif $op ~~ Int | Str {
             return $op;
         }
         return 0;

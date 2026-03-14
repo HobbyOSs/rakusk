@@ -57,21 +57,11 @@ class Pass2 is export {
         given $node.mnemonic {
             when 'DB' {
                 for $node.operands -> $op {
-                    if $op ~~ Immediate {
-                        my $res = $op.expr.eval(%env);
-                        if $res ~~ NumberExp {
-                            $bin.push($res.value % 256);
-                        } else {
-                            my $s = $op.Str;
-                            $bin ~= $s.encode('ascii');
-                        }
-                    } else {
-                        my $res = $op ~~ Expression ?? $op.eval(%env) !! $op;
-                        if $res ~~ NumberExp {
-                            $bin.push($res.value % 256);
-                        } elsif $res ~~ Str {
-                            $bin ~= $res.encode('ascii');
-                        }
+                    my $val = self!eval-to-any($op, %env);
+                    if $val ~~ Int {
+                        $bin.push($val % 256);
+                    } elsif $val ~~ Str {
+                        $bin ~= $val.encode('ascii');
                     }
                 }
             }
@@ -105,13 +95,26 @@ class Pass2 is export {
     }
 
     method !eval-to-int($op, %env) {
+        my $res = self!eval-to-any($op, %env);
+        return $res if $res ~~ Int;
+        return 0;
+    }
+
+    method !eval-to-any($op, %env) {
         if $op ~~ Immediate {
             my $res = $op.expr.eval(%env);
-            return $res.value if $res ~~ NumberExp;
+            if $res ~~ NumberExp {
+                return $res.value;
+            } else {
+                return $op.expr.factor.eval(%env);
+            }
         } elsif $op ~~ Expression {
             my $res = $op.eval(%env);
-            return $res.value if $res ~~ NumberExp;
-        } elsif $op ~~ Int {
+            if $res ~~ NumberExp {
+                return $res.value;
+            }
+            return $res;
+        } elsif $op ~~ Int | Str {
             return $op;
         }
         return 0;
