@@ -1,6 +1,7 @@
 # Progress - rakusk
 
 ## 実装済み機能
+- [x] e2eテスト用ヘルパーの移植 (`t/TestHelper.rakumod`)
 - [x] Pass 1 / Pass 2 のモジュール分割とディレクトリ構造の整理 (`lib/Rakusk/`)
 - [x] Pass 1 / Pass 2 の基本クラス構造の定義（ラベル解決の準備）
 - [x] Pass 2 アセンブラ基盤（AST中間表現）の導入
