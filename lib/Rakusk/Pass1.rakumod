@@ -6,26 +6,38 @@ class Pass1 is export {
     has %.symbols;
     has @.ast;
     has Int $.pc = 0;
+    has Int $.bit_mode = 16;
 
     method evaluate(@ast, %regs) {
         @!ast = @ast;
         
         # パス1: ラベル・定数の収集とPCの計算
         $!pc = 0;
+        $!bit_mode = 16;
         for @!ast -> $node {
             if $node ~~ LabelStmt {
                 %!symbols{$node.label} = $!pc;
                 next;
             }
             if $node ~~ DeclareStmt {
-                %!symbols{$node.name} = $node.value; # TODO: 式の評価
+                my %env = symbols => %!symbols, PC => $!pc;
+                my $val = self!eval-to-any($node.value, %env);
+                %!symbols{$node.name} = $val;
+                next;
+            }
+
+            if $node ~~ ConfigStmt {
+                if $node.type eq 'BITS' {
+                    my %env = symbols => %!symbols, PC => $!pc;
+                    $!bit_mode = self!eval-to-int($node.value, %env);
+                }
                 next;
             }
 
             # ORG 命令の特別な処理
             if $node ~~ PseudoNode && $node.mnemonic eq 'ORG' {
-                my $val = $node.operands[0];
-                $!pc = $val ~~ Immediate ?? $val.Int !! $val.Int;
+                my %env = symbols => %!symbols, PC => $!pc;
+                $!pc = self!eval-to-int($node.operands[0], %env);
                 next;
             }
 
@@ -45,12 +57,18 @@ class Pass1 is export {
 
     method !size-of-instruction($node, %regs, %env) {
         my %info = $node.info;
-        if %info<type> eq 'no-op' {
-            return 1;
+        return 0 unless %info;
+
+        given %info<type> {
+            when 'no-op' { return 1; }
+            when 'reg-imm8' { return 2; }
+            when 'imm8' { return 2; }
+            when 'imm16' { return 3; }
+            when 'imm32' { return 5; }
+            when 'short-jump' { return 2; }
         }
-        elsif %info<type> eq 'reg-imm8' {
-            return 2;
-        }
+        # 未知の命令タイプや複雑なアドレッシングモードの場合は、
+        # 将来的に ModR/M 計算ロジックを呼ぶ
         return 0;
     }
 

@@ -2,14 +2,13 @@
 # Active Context
 
 ## 最近の変更点
-- `gosk` からテスト用ヘルパーを Raku に移植 (`t/TestHelper.rakumod`)。16進数DSL (`define-hex`)、hexdump、バイナリ差分表示などの機能を実装。
-- `lib/Rakusk/AST.rakumod` において、`Register`, `Immediate` クラスおよび `Operand` ロールを導入し、ASTノード（`LabelStmt`, `DeclareStmt`, `ConfigStmt`, `InstructionNode`, `PseudoNode`）を構造化。
-- `lib/Rakusk/Grammar.rakumod` を `memory-bank/docs/spec.md` の仕様に厳密に準拠するよう修正。当初実装していた仕様外の構文（アドレッシングモードやドット開始のディレクティブ）を削除。
-- `t/grammar.t` と `t/ast.t` を作成・更新し、仕様に基づいたパースとAST構築が正しく行われることを確認。
+- `lib/Rakusk/Pass1.rakumod` を更新し、シンボル解決（EQU, ラベル）、ビットモード保持（BITS）、ORG/RESB/ALIGNB のサイズ計算、命令サイズ計算（size-of-instruction）の実装を強化。
+- `t/pass1.t` を作成し、`gosk` の `pass1_test.go` から主要なテストケース（定数定義、ラベル、現在位置 `$` を含むアドレス計算など）を移植。
+- `Pass1` において環境変数（`%env`）に `PC` と `symbols` を渡し、式（`Expression`）を動的に評価する仕組みを導入。
 
 ## 現在の焦点
-- ASTをベースにしたPass1（シンボル解決・ラベル収集）の再構築。
+- パス1の実装完了と、パス2（バイナリ生成）への統合。
 
 ## 次のステップ
-- `lib/Rakusk/Pass1.rakumod` の更新：新しいAST構造に対応したパス1の実装。
-- シンボルテーブルの管理ロジックの改善。
+- `lib/Rakusk/Pass2.rakumod` の更新：パス1で解決されたシンボルやビットモードを反映したバイナリ生成の精緻化。
+- 命令サイズの計算ロジック（ModR/M等）の更なる抽象化と実装。

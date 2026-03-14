@@ -1,6 +1,7 @@
 use v6;
 use Test;
 use Rakusk;
+use lib 't';
 use TestHelper;
 
 subtest 'TestHelloos1' => {

@@ -1,7 +1,7 @@
 # Progress - rakusk
 
 ## 実装済み機能
-- [x] e2eテスト用ヘルパーの移植 (`t/TestHelper.rakumod`)
+- [x] e2eテスト用ヘルパーの移植と修正 (`t/TestHelper.rakumod`)
 - [x] Pass 1 / Pass 2 のモジュール分割とディレクトリ構造の整理 (`lib/Rakusk/`)
 - [x] Pass 1 / Pass 2 の基本クラス構造の定義（ラベル解決の準備）
 - [x] Pass 2 アセンブラ基盤（AST中間表現）の導入
@@ -23,6 +23,7 @@
 - [x] `lib/Rakusk/AST.rakumod` における型付きASTノードの導入
 - [x] `lib/Rakusk/Grammar.rakumod` の `spec.md` 準拠修正
 - [x] 文法およびASTの単体テストの拡充 (`t/grammar.t`, `t/ast.t`)
+- [x] Pass 1 実装の強化とテスト移植 (`lib/Rakusk/Pass1.rakumod`, `t/pass1.t`)
 
 ## 未実装 / 今後の予定
 - [ ] ModR/M バイト生成ロジックの抽象化

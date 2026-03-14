@@ -115,12 +115,17 @@ sub hex-diff(Buf $expected, Buf $actual, Int :$context = 3) is export {
 
 sub hexdump-range(Buf $data, Int $start, Int $end) {
     my $len = $data.elems;
+    return "" if $len == 0;
     my $actual-end = $end < $len ?? $end !! $len;
     my $actual-start = $start < $len ?? $start !! $len;
     
     my $res = "";
-    for ($actual-start / 16).Int * 16, * + 16 ...^ $actual-end -> $i {
+    my $loop-start = ($actual-start / 16).Int * 16;
+    # ループの終了条件をより確実に制御する
+    my $i = $loop-start;
+    while $i < $actual-end {
         my $row-count = ($len - $i) < 16 ?? ($len - $i) !! 16;
+        next if $row-count <= 0;
         my $bytes = $data.subbuf($i, $row-count);
         $res ~= sprintf("%06x  ", $i);
         for 0..15 -> $j {
@@ -136,6 +141,7 @@ sub hexdump-range(Buf $data, Int $start, Int $end) {
             $res ~= (32 <= $c <= 126) ?? $c.chr !! ".";
         }
         $res ~= "'\n";
+        $i += 16;
     }
     return $res;
 }
