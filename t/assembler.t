@@ -15,6 +15,9 @@ subtest "Basic Instructions" => {
 subtest "MOV Instructions" => {
     is-deeply assemble("MOV AL, 0x12").list, (0xB0, 0x12), "MOV AL, 0x12 (reg-imm8)";
     is-deeply assemble("MOV CL, 10").list, (0xB1, 10), "MOV CL, 10 (decimal imm8)";
+    is-deeply assemble("MOV EAX, EBX").list, (0x89, 0xD8), "MOV EAX, EBX (reg-reg)";
+    is-deeply assemble("MOV EBX, EAX").list, (0x89, 0xC3), "MOV EBX, EAX (reg-reg)";
+    is-deeply assemble("MOV ESI, EDI").list, (0x89, 0xFE), "MOV ESI, EDI (reg-reg)";
 }
 
 subtest "Multiple Lines" => {

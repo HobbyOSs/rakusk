@@ -9,6 +9,13 @@ my $data = from-json($DEFAULT_INST_PATH.IO.slurp);
 my %INST_DATA = $data<instructions>;
 my %REGS_DATA = $data<registers>;
 
+# ニーモニックから命令定義へのマップ（複数のバリアントを保持可能）
+my %MNEMONIC_MAP;
+for %INST_DATA.kv -> $key, $val {
+    my $m = $val<mnemonic> // $key;
+    %MNEMONIC_MAP{$m.uc}.push($val);
+}
+
 grammar Assembler is export {
     # 既存の ws をオーバーライドして、コメントも空白として扱う
     # ただし改行は文の区切りとして重要なので含めない
@@ -60,7 +67,7 @@ grammar Assembler is export {
     rule mnemonic_stmt { <mnemonic_op_any> <operand_list> }
     token opcode_stmt { <mnemonic_op_any> }
     token mnemonic_op_any { 
-        | :i @( %INST_DATA.keys.sort({ $^b.chars <=> $^a.chars }) )
+        | :i @( %MNEMONIC_MAP.keys.sort({ $^b.chars <=> $^a.chars }) )
         | <ident>
     }
 
@@ -143,18 +150,51 @@ class AssemblerActions is export {
 
     method opcode_stmt($/) {
         my $m = $<mnemonic_op_any>.uc;
-        make InstructionNode.new(mnemonic => $m, info => %INST_DATA{$m});
+        my @variants = |(%MNEMONIC_MAP{$m} // []);
+        my $info = @variants.elems > 0 ?? @variants[0] !! {};
+        make InstructionNode.new(mnemonic => $m, info => $info);
     }
 
     method mnemonic_stmt($/) {
         my $m = $<mnemonic_op_any>.uc;
-        my $info = %INST_DATA{$m};
+        my @variants = |(%MNEMONIC_MAP{$m} // []);
         my @ops = $<operand_list>.made;
+
+        my $info = self!select-variant($m, @variants, @ops);
+
         if $info && $info<type> eq 'pseudo' {
             make PseudoNode.new(mnemonic => $m, operands => @ops);
         } else {
             make InstructionNode.new(mnemonic => $m, operands => @ops, info => $info // {});
         }
+    }
+
+    method !select-variant($mnemonic, @variants, @ops) {
+        return {} if @variants.elems == 0;
+        return @variants[0] if @variants.elems == 1;
+
+        for @variants -> $v {
+            if self!match-variant($v, @ops) {
+                return $v;
+            }
+        }
+        return @variants[0];
+    }
+
+    method !match-variant($v, @ops) {
+        my $type = $v<type> // '';
+        given $type {
+            when 'reg-reg' {
+                return @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Register;
+            }
+            when 'reg-imm8' | 'reg-imm16' | 'reg-imm32' {
+                return @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Immediate;
+            }
+            when 'no-op' {
+                return @ops.elems == 0;
+            }
+        }
+        return False;
     }
 
     method operand_list($/) { make $<operand>».made; }

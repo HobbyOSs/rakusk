@@ -1,6 +1,7 @@
 use v6;
 unit module Rakusk::Pass2;
 use Rakusk::AST;
+use Rakusk::Util;
 
 class Pass2 is export {
     has @.ast;
@@ -46,6 +47,17 @@ class Pass2 is export {
             my $imm_val = self!eval-to-int($node.operands[1], %env);
             my $opcode = %info<base_opcode>.parse-base(16) + %regs{$reg_name};
             return Buf.new($opcode, $imm_val % 256);
+        }
+        elsif %info<type> eq 'reg-reg' {
+            # 例: MOV EAX, EBX -> opcode 89, ModR/M C3
+            # operands[0] が dst (r/m), operands[1] が src (reg)
+            my $dst_reg = %regs{$node.operands[0].name.uc};
+            my $src_reg = %regs{$node.operands[1].name.uc};
+
+            # レジスタ間転送なので Mod=3
+            my $modrm = pack-modrm(mod => 3, reg => $src_reg, rm => $dst_reg);
+            
+            return Buf.new(%info<opcode>.parse-base(16), $modrm);
         }
         return Buf.new();
     }

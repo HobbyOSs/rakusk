@@ -300,6 +300,7 @@ class Pass1 is export {
             when 'imm16' { return 3; }
             when 'imm32' { return 5; }
             when 'short-jump' { return 2; }
+            when 'reg-reg' { return 2; }
         }
         return 0;
     }
