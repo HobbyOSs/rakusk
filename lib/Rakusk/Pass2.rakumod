@@ -6,7 +6,7 @@ class Pass2 is export {
     has @.ast;
     has Buf $.output = Buf.new();
 
-    method assemble(%regs) {
+    method assemble(%regs, %symbols = {}) {
         my $pc = 0;
         for @!ast -> $node {
             if $node ~~ PseudoNode && $node.mnemonic eq 'ORG' {
@@ -15,12 +15,14 @@ class Pass2 is export {
                 next;
             }
 
+            my %env = symbols => %symbols, PC => $pc;
+
             my $bin;
             if $node ~~ InstructionNode {
-                $bin = $node.encode(%regs);
+                $bin = $node.encode(%regs, %env);
             }
             elsif $node ~~ PseudoNode {
-                $bin = $node.encode($pc);
+                $bin = $node.encode(%env);
             }
 
             if $bin.defined {

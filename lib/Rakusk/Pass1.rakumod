@@ -29,27 +29,14 @@ class Pass1 is export {
                 next;
             }
 
-            # 動的なオペランド（$など）の解決
-            if $node.can('operands') {
-                my @ops := $node.operands;
-                for @ops.kv -> $i, $op {
-                    # $op が Operand (Register, Immediate) の場合
-                    my $val = $op ~~ Str ?? $op !! $op.Str;
-                    if $val eq '$' {
-                        @ops[$i] = Rakusk::AST::Immediate.new(value => $!pc);
-                    }
-                    elsif %!symbols{$val}:exists {
-                        my $sym_val = %!symbols{$val};
-                        @ops[$i] = $sym_val ~~ Rakusk::AST::Immediate ?? $sym_val !! Rakusk::AST::Immediate.new(value => $sym_val);
-                    }
-                }
-            }
+            # 環境の構築
+            my %env = symbols => %!symbols, PC => $!pc;
 
             if $node ~~ InstructionNode {
-                $!pc += $node.encode(%regs).elems;
+                $!pc += $node.encode(%regs, %env).elems;
             }
             elsif $node ~~ PseudoNode {
-                $!pc += $node.encode($!pc).elems;
+                $!pc += $node.encode(%env).elems;
             }
         }
         return self;

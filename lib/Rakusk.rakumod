@@ -25,5 +25,5 @@ our sub assemble(Str $source) is export {
 
     # 4. Pass 2 (バイナリ生成)
     my $pass2 = Pass2.new(ast => $pass1.ast);
-    return $pass2.assemble(%regs);
+    return $pass2.assemble(%regs, $pass1.symbols);
 }

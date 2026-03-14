@@ -67,9 +67,11 @@ grammar Assembler is export {
     rule operand_list { <operand> [ ',' <operand> ]* }
     token operand { <exp> }
 
-    # 式（二項演算の優先順位は簡略化）
-    rule exp { <term> [ <op> <term> ]* }
-    token op { <[ + \- * / % ]> }
+    # 式（二項演算の優先順位）
+    rule exp { <mult_exp> [ <add_op> <mult_exp> ]* }
+    token add_op { <[ + \- ]> }
+    rule mult_exp { <term> [ <mult_op> <term> ]* }
+    token mult_op { <[ * / % ]> }
     rule term {
         | <factor>
         | '(' <exp> ')'
@@ -156,15 +158,45 @@ class AssemblerActions is export {
     }
 
     method operand_list($/) { make $<operand>».made; }
-    method operand($/) { make $<exp>.made; }
-    method exp($/) {
-        my $res = $<term>[0].made;
-        # TODO: 演算の実装（現在は最初の一つのみ）
-        make $res;
+    method operand($/) {
+        my $made = $<exp>.made;
+        if $made ~~ Expression {
+            make Immediate.new(expr => $made);
+        } else {
+            make $made;
+        }
     }
+
+    method exp($/) {
+        my $head = $<mult_exp>[0].made;
+        if $<add_op> {
+            make AddExp.new(
+                head => $head,
+                operators => $<add_op>».Str,
+                tails => $<mult_exp>[1..*]».made
+            );
+        } else {
+            make $head;
+        }
+    }
+
+    method mult_exp($/) {
+        my $head = $<term>[0].made;
+        if $<mult_op> {
+            make MultExp.new(
+                head => $head,
+                operators => $<mult_op>».Str,
+                tails => $<term>[1..*]».made
+            );
+        } else {
+            make $head;
+        }
+    }
+
     method term($/) {
         make $<factor> ?? $<factor>.made !! $<exp>.made;
     }
+
     method factor($/) {
         if $<reg> {
             make $<reg>.made;
@@ -172,22 +204,27 @@ class AssemblerActions is export {
         elsif $<addressing> {
             make $<addressing>.made;
         }
-        elsif $<hex_lit> {
-            make Immediate.new(value => $<hex_lit>.Str.substr(2).parse-base(16));
-        }
-        elsif $<num_lit> {
-            make Immediate.new(value => $<num_lit>.Int);
-        }
-        elsif $<string_lit> {
-            make Immediate.new(value => $<string_lit>.Str);
-        }
-        elsif $<ident> {
-            # identifier can be a register (if not matched by <reg> yet) or a symbol
-            # but usually <reg> matches first if it's a register.
-            make Immediate.new(value => $<ident>.Str);
-        }
-        elsif $/ eq '$' {
-            make Immediate.new(value => '$');
+        else {
+            my $factor;
+            if $<hex_lit> {
+                $factor = HexFactor.new(value => $<hex_lit>.Str);
+            }
+            elsif $<num_lit> {
+                $factor = NumberFactor.new(value => $<num_lit>.Int);
+            }
+            elsif $<string_lit> {
+                $factor = StringFactor.new(value => $<string_lit>.Str);
+            }
+            elsif $<ident> {
+                $factor = IdentFactor.new(value => $<ident>.Str);
+            }
+            elsif $/ eq '$' {
+                $factor = IdentFactor.new(value => '$');
+            }
+
+            if $factor {
+                make ImmExp.new(factor => $factor);
+            }
         }
     }
 
@@ -230,6 +267,9 @@ class AssemblerActions is export {
         }
         if $<disp> {
             $mem.disp = $<disp>[0].made;
+        } else {
+            # disp が無い場合は 0 (NumberExp) を入れておく
+            $mem.disp = NumberExp.new(value => 0);
         }
 
         make $mem;
