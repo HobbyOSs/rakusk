@@ -18,7 +18,7 @@
 - [x] 大量の1バイト命令のサポート (`gosk`参考)
 - [x] `MOV reg, imm8` の基本実装
 - [x] `gosk` の `spec.md` を取り込み
-- [x] キャッシュ機能付き GitHub Actions CI の導入
+- [x] キャッシュ機能付き GitHub Actions CI の導入 (JSON::Fastの依存関係追加含む)
 
 ## 未実装 / 今後の予定
 - [ ] ModR/M バイト生成ロジックの抽象化

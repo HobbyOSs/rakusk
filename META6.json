@@ -6,7 +6,9 @@
   "authors": [
     "Cline"
   ],
-  "depends": [],
+  "depends": [
+    "JSON::Fast"
+  ],
   "provides": {
   },
   "resources": [],
