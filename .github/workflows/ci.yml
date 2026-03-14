@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Raku
+        uses: Raku/setup-raku@v1
+        with:
+          raku-version: 'latest'
+
+      - name: Cache Zef modules
+        uses: actions/cache@v4
+        with:
+          path: ~/.zef
+          key: ${{ runner.os }}-zef-${{ hashFiles('**/META6.json') }}
+          restore-keys: |
+            ${{ runner.os }}-zef-
+
+      - name: Install dependencies
+        run: |
+          zef install --deps-only .
+
+      - name: Install ndisasm
+        run: sudo apt-get update && sudo apt-get install -y nasm
+
+      - name: Run tests
+        run: make test
