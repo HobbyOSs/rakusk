@@ -1,5 +1,6 @@
 use v6;
 use Rakusk::AST;
+use Rakusk::Util;
 
 unit role Rakusk::Pass2::Pseudo;
 
@@ -12,30 +13,22 @@ method encode-pseudo($node, %env) {
             for $node.operands -> $op {
                 my $val = self.eval-to-any($op, %env);
                 if $val ~~ Int {
-                    $bin.push($val % 256);
+                    $bin ~= pack-le($val, 8);
                 } elsif $val ~~ Str {
-                    if $val.chars > 1 {
-                        $bin ~= $val.encode('ascii');
-                    } else {
-                        $bin.push($val.ord % 256);
-                    }
+                    $bin ~= pack-str($val);
                 }
             }
         }
         when 'DW' {
             for $node.operands -> $op {
                 my $val = self.eval-to-int($op, %env);
-                $bin.push($val % 256);
-                $bin.push(($val +> 8) % 256);
+                $bin ~= pack-le($val, 16);
             }
         }
         when 'DD' {
             for $node.operands -> $op {
                 my $val = self.eval-to-int($op, %env);
-                $bin.push($val % 256);
-                $bin.push(($val +> 8) % 256);
-                $bin.push(($val +> 16) % 256);
-                $bin.push(($val +> 24) % 256);
+                $bin ~= pack-le($val, 32);
             }
         }
         when 'RESB' {

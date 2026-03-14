@@ -198,7 +198,7 @@ method encode-immediate($node, %info, %env) {
             my $imm_op = @ops.grep(Immediate)[0];
             if $imm_op {
                 my $val = self.eval-to-int($imm_op, %env);
-                $bin.push($val % 256);
+                $bin ~= pack-le($val, 8);
             }
         }
         when 'reg-imm16' | 'mem-imm16' | 'reg-reg-imm16' | 'short-imm' {
@@ -214,28 +214,19 @@ method encode-immediate($node, %info, %env) {
                     $width = (self.bit_mode == 16 ?? 16 !! 32);
                 }
             }
-
-            $bin.push($val % 256);
-            if $width >= 16 {
-                $bin.push(($val +> 8) % 256);
-            }
-            if $width == 32 {
-                $bin.push(($val +> 16) % 256, ($val +> 24) % 256);
-            }
+            $bin ~= pack-le($val, $width);
         }
         when 'short-jump' {
             my $target = self.eval-to-int(@ops[0], %env);
             my $offset = $target - (%env<PC> + 2);
-            $bin.push($offset % 256);
+            $bin ~= pack-le($offset, 8);
         }
         when 'near-jump' {
             my $target = self.eval-to-int(@ops[0], %env);
+            my $width = (self.bit_mode == 16 ?? 16 !! 32);
             my $inst_size = (self.bit_mode == 16 ?? 3 !! 5);
             my $offset = $target - (%env<PC> + $inst_size);
-            $bin.push($offset % 256, ($offset +> 8) % 256);
-            if self.bit_mode == 32 {
-                $bin.push(($offset +> 16) % 256, ($offset +> 24) % 256);
-            }
+            $bin ~= pack-le($offset, $width);
         }
         when 'far-jump' {
             my $op = @ops[0];
@@ -243,11 +234,8 @@ method encode-immediate($node, %info, %env) {
             my $offset = self.eval-to-int($op.offset, %env);
             my $use_32bit = (self.bit_mode == 32 || ($op.size_prefix // '') eq 'DWORD');
             
-            $bin.push($offset % 256, ($offset +> 8) % 256);
-            if $use_32bit {
-                $bin.push(($offset +> 16) % 256, ($offset +> 24) % 256);
-            }
-            $bin.push($selector % 256, ($selector +> 8) % 256);
+            $bin ~= pack-le($offset, $use_32bit ?? 32 !! 16);
+            $bin ~= pack-le($selector, 16);
         }
     }
     return $bin;
