@@ -14,22 +14,28 @@ method process-instruction($node, %regs, %env) {
     }
 
     # それ以外の一般命令はエンコードを試みてサイズを確定させる
+    # Pass 1 の段階で bit_mode が正しく設定されていることを前提にする
     my $size = self.size-of-instruction($node, %regs, %env);
+    
     if $size == 0 {
-        # エンコードに失敗した場合（ラベル未定義等）、以前の推計ロジックに近い値を暫定的に使うか警告
-        # ただし一般命令でサイズが変わることは稀
-        $size = 2; # 最小サイズ
+        # エンコードに失敗した場合（未定義の命令タイプ等）、安全なフォールバック
+        if ($node.info<type> // '') eq 'no-op' {
+            $size = 1;
+        } else {
+            $size = 2;
+        }
     }
     self.pc += $size;
 }
 
 method size-of-instruction($node, %regs, %env) {
-    # 実際にエンコードしてサイズを測る
-    # ただし、Pass 1 ではラベル未定義などで eval が失敗する可能性があるため、
-    # 未定義ラベルを 0 とみなして計算する（サイズ計算のため）
+    # Pass 1 におけるサイズ計算。
+    # エンコーディングロジックを流用する。
+    # シンボル解決ができない場合を考慮し、一時的に symbols をクローンする。
     my %dummy_env = %env;
     %dummy_env<symbols> = %env<symbols>.clone;
-    # 存在しないシンボルが参照されたときに 0 を返すための仕組みが必要
+    # 32ビットモード情報を正しく引き継ぐ
+    %dummy_env<bit_mode> = self.bit_mode;
     
     my $bin = self.encode-instruction($node, %regs, %dummy_env);
     return $bin.elems;

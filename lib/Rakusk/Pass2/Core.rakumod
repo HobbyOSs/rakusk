@@ -22,6 +22,7 @@ has @.listing;
 
 method assemble(%regs, %symbols = {}) {
     my $pc = 0;
+    @!relocations = [];
     # bit_mode はコンストラクタで渡された値を初期値とする
     $!output = Buf.new();
     @!listing = [];
@@ -47,6 +48,7 @@ method assemble(%regs, %symbols = {}) {
         my $bin = self.encode-node($node, %regs, %env);
 
         if $bin.defined {
+            say "DEBUG: PC=$pc mnemonic=" ~ ($node ~~ InstructionNode ?? $node.mnemonic !! 'pseudo') ~ " size=" ~ $bin.elems ~ " hex=" ~ $bin.list.fmt("%02x", " ") if %*ENV<RAKUSK_DEBUG>;
             my $type = do given $node {
                 when InstructionNode { $node.info<type> // 'unknown' }
                 when PseudoNode { 'pseudo' }
@@ -61,6 +63,8 @@ method assemble(%regs, %symbols = {}) {
     }
 
     if $!output_format.uc eq 'WCOFF' {
+        # relocations が重複して登録されている可能性があるため、Pass2開始時にクリアするか、ここで整理する
+        # 現状、Instruction.rakumod で直接 @!relocations に push している
         my $bin = self.wrap-wcoff(%symbols, $!output, $!source_file_name, @!global_symbols, @!extern_symbols, @!relocations, @!symbol_order);
         return { output => $bin, :@!listing };
     }

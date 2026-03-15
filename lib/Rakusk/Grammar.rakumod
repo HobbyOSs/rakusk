@@ -247,7 +247,7 @@ class AssemblerActions is export does Evaluator {
         }
 
         # 2. 算術演算での imm8 最適化 (83 /x ib 形式の優先)
-        if $m ~~ /^(ADD|SUB|CMP|AND|OR|XOR|ADC|SBB)$/ && @ops.elems == 2 && @ops[1] ~~ Immediate && @ops[0] ~~ Register {
+        if $m ~~ /^(ADD|SUB|CMP|AND|OR|XOR|ADC|SBB)$/ && @ops.elems == 2 && @ops[1] ~~ Immediate && (@ops[0] ~~ Register | Memory) {
             my $ev = @ops[1].expr.eval(%env);
             if $ev ~~ NumberExp && $ev.value.abs <= 127 {
                 my @matches = @variants.grep({
@@ -257,13 +257,19 @@ class AssemblerActions is export does Evaluator {
                 });
                  
                 my $best;
-                my $width = @ops[0].width;
+                my $width = @ops[0] ~~ Register ?? @ops[0].width !! (self.bit_mode == 16 ?? 16 !! 32);
+                if @ops[0] ~~ Memory && @ops[0].size_prefix {
+                    $width = 8 if @ops[0].size_prefix eq 'BYTE';
+                    $width = 16 if @ops[0].size_prefix eq 'WORD';
+                    $width = 32 if @ops[0].size_prefix eq 'DWORD';
+                }
+
                 if $width == 8 {
                     $best = @matches.grep({ ($_<type> // '') eq 'short-imm' })[0] // @matches[0];
                 } elsif $width == 16 {
                     $best = @matches.grep({ ($_<type> // '') eq 'short-imm' })[0] // @matches[0];
                 } else { # 32-bit
-                    $best = @matches.grep({ ($_<type> // '') eq 'reg-imm8' })[0] // @matches[0];
+                    $best = @matches.grep({ ($_<type> // '') ~~ 'reg-imm8' | 'mem-imm8' })[0] // @matches[0];
                 }
                 return InstructionNode.new(mnemonic => $m, operands => @ops, info => $best) if $best;
             }

@@ -270,16 +270,27 @@ method encode-immediate($node, %info, %env) {
                 if self.output_format.uc eq 'WCOFF' && self.extern_symbols.grep({ $_ eq $name }) {
                     # リロケーションの追加
                     if %env<relocations>.defined {
+                        say "DEBUG: Pushing relocation for ", $name if %*ENV<RAKUSK_DEBUG>;
                         # sym_idx は .file (2) + sections (3*2=6) = 8
                         # その後 EXTERN, GLOBAL の順に並ぶ
                         my $sym_idx = 8;
+                        # EXTERN, GLOBAL の順を正確に守る
                         my $found = False;
-                        for self.extern_symbols -> $e {
+                        # .file(2) + sections(3*2) = 8
+                        # syms に追加される順序を再現する必要がある:
+                        # 1. extern_symbols
+                        # 2. global_symbols
+                        
+                        # 重複を排除した順序
+                        my @all_externs = self.extern_symbols.unique;
+                        my @all_globals = self.global_symbols.unique;
+
+                        for @all_externs -> $e {
                             if $e eq $name { $found = True; last; }
                             $sym_idx++;
                         }
                         unless $found {
-                            for self.global_symbols -> $g {
+                            for @all_globals -> $g {
                                 if $g eq $name { $found = True; last; }
                                 $sym_idx++;
                             }
@@ -291,6 +302,9 @@ method encode-immediate($node, %info, %env) {
                         });
                     }
                     # EXTERN の場合は 0 をベースにする (gosk / nask に合わせる)
+                    # ただし nask (WCOFF) では、CALL EXTERN は e8 fd ff ff ff (-3) などの
+                    # 相対オフセットが書き込まれることがある（再配置対象のベース値）
+                    # 今回の expected では e8 00 00 00 00 (0) になっている可能性も考慮
                     $bin ~= pack-le(0, $width);
                     return $bin;
                 }

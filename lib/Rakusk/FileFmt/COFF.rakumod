@@ -33,8 +33,13 @@ method wrap-wcoff(%symbols, $output, $source_file_name, @global_symbols, @extern
     my $bss_size = 0;
     
     my $reloc_table_offset = 20 + 40 * $num_sections + $text_size + $data_size;
+    # 実際には relocation table offset はセクションごとに異なるが、
+    # ここでは .text だけにリロケーションがある前提（Day 09の構成）
     my $reloc_size = @relocations.elems * 10;
     my $symbol_table_offset = $reloc_table_offset + $reloc_size;
+    
+    # リロケーションがある場合のみオフセットを有効にする
+    my $actual_reloc_offset = @relocations.elems > 0 ?? $reloc_table_offset !! 0;
     
     # Symbols: .file, sections, then globals/externs
     my @syms;
@@ -43,25 +48,34 @@ method wrap-wcoff(%symbols, $output, $source_file_name, @global_symbols, @extern
     # section symbols
     for 1..$num_sections -> $i {
         my $num_relocs = ($i == 1 ?? @relocations.elems !! 0);
+        my $sec_size = do given $i {
+            when 1 { $text_size }
+            when 2 { $data_size }
+            when 3 { $bss_size }
+            default { 0 }
+        };
         @syms.push({ 
             name => @section_names[$i-1], 
             value => 0, 
             section => $i, 
             storage => 3, 
-            aux => pack-le($i == 1 ?? $text_size !! 0, 32) 
+            aux => pack-le($sec_size, 32) 
                  ~ pack-le($num_relocs, 16) 
                  ~ pack-le(0, 16) # NumberOfLinenumbers
                  ~ pack-le(0, 32) # Checksum
-                 ~ pack-le(0, 16) # Number
+                 ~ pack-le($i, 16) # Section number (1-based)
                  ~ pack-le(0, 8)  # Selection
                  ~ Buf.new(0 xx 3) # Unused
         });
     }
     
-    for @extern_symbols -> $name {
+    my @all_externs = @extern_symbols.unique;
+    my @all_globals = @global_symbols.unique;
+
+    for @all_externs -> $name {
         @syms.push({ name => $name, value => 0, section => 0, storage => 2 });
     }
-    for @global_symbols -> $name {
+    for @all_globals -> $name {
         my $val = %symbols{$name} // 0;
         @syms.push({ name => $name, value => $val, section => 1, storage => 2 });
     }
@@ -119,7 +133,7 @@ method wrap-wcoff(%symbols, $output, $source_file_name, @global_symbols, @extern
     $bin ~= pack-le(0, 32); # VirtualAddress
     $bin ~= pack-le($text_size, 32);
     $bin ~= pack-le(20 + 40 * $num_sections, 32); # PointerToRawData
-    $bin ~= pack-le((@relocations.elems > 0 || ($text_size > 0 && @global_symbols.elems > 0)) ?? $reloc_table_offset !! 0, 32); # PointerToRelocations
+    $bin ~= pack-le($actual_reloc_offset, 32); # PointerToRelocations
     $bin ~= pack-le(0, 32); # PointerToLinenumbers
     $bin ~= pack-le(@relocations.elems, 16); # NumberOfRelocations
     $bin ~= pack-le(0, 16); # NumberOfLinenumbers
