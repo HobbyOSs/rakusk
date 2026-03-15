@@ -12,6 +12,9 @@ if %*ENV<RAKUSK_LOG_LEVEL> -> $env-level {
     }
 }
 
+sub set-level(Level $level) is export { $current-level = $level; }
+sub get-level() is export { $current-level; }
+
 sub log(Level $level, $msg) is export {
     return if $level.value < $current-level.value;
     

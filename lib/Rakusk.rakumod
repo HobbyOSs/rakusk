@@ -4,8 +4,15 @@ use Rakusk::Grammar;
 use Rakusk::Pass1;
 use Rakusk::Pass2;
 use JSON::Fast;
+use Rakusk::Log;
 
 our $DEFAULT_INST_PATH = "data/instructions.json";
+
+class AssembledResult is export {
+    has Buf $.binary;
+    has @.listing;
+    has %.symbols;
+}
 
 our sub assemble(Str $source) is export {
     # 1. データの読み込み
@@ -26,5 +33,11 @@ our sub assemble(Str $source) is export {
 
     # 4. Pass 2 (バイナリ生成)
     my $pass2 = Pass2.new(ast => $pass1.ast, :$bit_mode);
-    return $pass2.assemble(%regs, $pass1.symbols);
+    my $res = $pass2.assemble(%regs, $pass1.symbols);
+    
+    return AssembledResult.new(
+        binary => $res<output>,
+        listing => |$res<listing>,
+        symbols => $pass1.symbols
+    );
 }

@@ -6,27 +6,27 @@ use Rakusk;
 plan 5;
 
 subtest "Basic Instructions" => {
-    is-deeply assemble("CLI").list, (0xFA,), "CLI (no-op)";
-    is-deeply assemble("STI").list, (0xFB,), "STI (no-op)";
-    is-deeply assemble("NOP").list, (0x90,), "NOP (no-op)";
-    is-deeply assemble("PUSHA").list, (0x60,), "PUSHA (no-op)";
+    is-deeply assemble("CLI").binary.list, (0xFA,), "CLI (no-op)";
+    is-deeply assemble("STI").binary.list, (0xFB,), "STI (no-op)";
+    is-deeply assemble("NOP").binary.list, (0x90,), "NOP (no-op)";
+    is-deeply assemble("PUSHA").binary.list, (0x60,), "PUSHA (no-op)";
 }
 
 subtest "MOV Instructions" => {
-    is-deeply assemble("MOV AL, 0x12").list, (0xB0, 0x12), "MOV AL, 0x12 (reg-imm8)";
-    is-deeply assemble("MOV CL, 10").list, (0xB1, 10), "MOV CL, 10 (decimal imm8)";
-    is-deeply assemble("MOV AX, BX").list, (0x89, 0xD8), "MOV AX, BX (reg-reg)";
-    is-deeply assemble("MOV BX, AX").list, (0x89, 0xC3), "MOV BX, AX (reg-reg)";
-    is-deeply assemble("MOV SI, DI").list, (0x89, 0xFE), "MOV SI, DI (reg-reg)";
+    is-deeply assemble("MOV AL, 0x12").binary.list, (0xB0, 0x12), "MOV AL, 0x12 (reg-imm8)";
+    is-deeply assemble("MOV CL, 10").binary.list, (0xB1, 10), "MOV CL, 10 (decimal imm8)";
+    is-deeply assemble("MOV AX, BX").binary.list, (0x89, 0xD8), "MOV AX, BX (reg-reg)";
+    is-deeply assemble("MOV BX, AX").binary.list, (0x89, 0xC3), "MOV BX, AX (reg-reg)";
+    is-deeply assemble("MOV SI, DI").binary.list, (0x89, 0xFE), "MOV SI, DI (reg-reg)";
 }
 
 subtest "32-bit Registers in 16-bit mode" => {
-    is-deeply assemble("MOV EAX, EBX").list, (0x66, 0x89, 0xD8), "MOV EAX, EBX (needs 66h)";
+    is-deeply assemble("MOV EAX, EBX").binary.list, (0x66, 0x89, 0xD8), "MOV EAX, EBX (needs 66h)";
 }
 
 subtest "Multiple Lines" => {
     my $multi = "CLI\nSTI\nHLT";
-    is-deeply assemble($multi).list, (0xFA, 0xFB, 0xF4), "Multiple instructions";
+    is-deeply assemble($multi).binary.list, (0xFA, 0xFB, 0xF4), "Multiple instructions";
 }
 
 subtest "Pseudo Instructions" => {
@@ -42,7 +42,7 @@ subtest "Pseudo Instructions" => {
     );
 
     for %cases.kv -> $src, $expected {
-        my $bin = assemble($src);
+        my $bin = assemble($src).binary;
         is-deeply $bin.list, $expected.List, "Case: $src";
     }
 }

@@ -147,7 +147,8 @@ sub hexdump-range(Buf $data, Int $start, Int $end) {
 }
 
 # バイナリ比較のためのカスタムテスト関数
-sub is-binary(Buf $actual, Buf $expected, $desc) is export {
+sub is-binary($actual_in, Buf $expected, $desc) is export {
+    my $actual = $actual_in ~~ Buf ?? $actual_in !! $actual_in.binary;
     if $actual eqv $expected {
         pass $desc;
     } else {

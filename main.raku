@@ -2,10 +2,18 @@ use v6;
 use lib 'lib';
 use Rakusk;
 
+use Rakusk::Log;
+
 #| rakusk: Raku-based x86 Assembler
 sub MAIN(
-    Str $file? #= 入力ファイルパス（指定がない場合は標準入力から読み込み）
+    Str $file?,               #= 入力ファイルパス（指定がない場合は標準入力から読み込み）
+    Bool :v(:$verbose) = False,  #= デバッグログを表示
+    Bool :i(:$show-info) = False #= 命令のサイズと情報を表示
 ) {
+    if $verbose {
+        set-level(DEBUG);
+    }
+
     my $code;
 
     if $file.defined && $file ne '-' {
@@ -25,7 +33,23 @@ sub MAIN(
         exit 1;
     }
 
-    my $bin = assemble($code);
+    my $res = assemble($code);
+    my $bin = $res.binary;
+
+    if $show-info {
+        say "\n--- Instruction Information ---";
+        for $res.listing -> $item {
+            # say "Item keys: " ~ $item.keys.join(', ');
+            next unless $item<bin>;
+            printf "0x%04X: [%-20s] %-12s size=%d  %s\n",
+            $item<pc>,
+            $item<bin>.list.map({ .fmt('%02X') }).join(' '),
+            $item<type>,
+            $item<size>,
+            $item<node>.mnemonic;
+        }
+        say "-------------------------------\n";
+    }
 
     if match_success($bin) {
         "boot.bin".IO.spurt($bin);

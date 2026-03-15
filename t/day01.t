@@ -31,7 +31,7 @@ subtest 'TestHelloos1' => {
 END
 
     my $actual = Rakusk::assemble($code);
-    is $actual.elems, 1474560, "Size should be 1,474,560 bytes";
+    is $actual.binary.elems, 1474560, "Size should be 1,474,560 bytes";
 
     my $expected = define-hex([
 		"DATA 0xeb 0x4e 0x90 0x48 0x45 0x4c 0x4c 0x4f",
@@ -116,7 +116,7 @@ subtest 'TestHelloos2' => {
 END
 
     my $actual = Rakusk::assemble($code);
-    is $actual.elems, 1474560, "Size should be 1,474,560 bytes";
+    is $actual.binary.elems, 1474560, "Size should be 1,474,560 bytes";
 
     my $expected = define-hex([
 		"DATA 0xeb  0x4e  0x90",
