@@ -18,7 +18,7 @@ method evaluate(@ast, %regs) {
     
     # パス1: ラベル・定数の収集とPCの計算
     $!pc = 0;
-    $!bit_mode = 16;
+    # bit_mode は初期化せず、コンストラクタで渡された値（またはデフォルト）を維持する
     @!global_symbols = [];
     @!extern_symbols = [];
 

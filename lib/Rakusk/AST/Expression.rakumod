@@ -17,11 +17,18 @@ class NumberExp does Expression is export {
     method value() {
         return $!value;
     }
-    method Int { 
+    method Int {
         return $!value if $!value ~~ Int;
-        $!value.Int 
+        $!value.Int
     }
     method Str { $!value.Str }
+}
+
+class StringExp does Expression is export {
+    has $.value;
+    method eval(%env) { self }
+    method value() { $!value }
+    method Str { $!value }
 }
 
 class ImmExp does Expression is export {
@@ -31,6 +38,23 @@ class ImmExp does Expression is export {
         if $val ~~ Int {
             return NumberExp.new(value => $val);
         }
+        if $val ~~ Str {
+            # Symbol or String literal
+            if %env<symbols>{$val}:exists {
+                my $sym_val = %env<symbols>{$val};
+                if $sym_val ~~ Int {
+                    return NumberExp.new(value => $sym_val);
+                }
+                if $sym_val ~~ Str {
+                    return StringExp.new(value => $sym_val);
+                }
+                return $sym_val;
+            }
+            return StringExp.new(value => $val);
+        }
+        # パス1でのサイズ計算用：未解決のシンボルは self を返して
+        # 定数ではないことを示す（または NumberExp(0) を返す従来の挙動を維持するか？）
+        # Grammar.rakumod でのリテラル判定に使われるため、ここでは self を返すのが望ましい
         return self;
     }
     method value() {
@@ -65,7 +89,7 @@ class MultExp does Expression is export {
             
             given $op {
                 when '*' { $val *= $tail_res.value }
-                when '/' { 
+                when '/' {
                     return self if $tail_res.value == 0;
                     $val = ($val / $tail_res.value).Int;
                 }

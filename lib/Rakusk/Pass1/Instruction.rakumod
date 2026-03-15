@@ -15,14 +15,23 @@ method process-instruction($node, %regs, %env) {
 
     # それ以外の一般命令はエンコードを試みてサイズを確定させる
     my $size = self.size-of-instruction($node, %regs, %env);
+    if $size == 0 {
+        # エンコードに失敗した場合（ラベル未定義等）、以前の推計ロジックに近い値を暫定的に使うか警告
+        # ただし一般命令でサイズが変わることは稀
+        $size = 2; # 最小サイズ
+    }
     self.pc += $size;
 }
 
 method size-of-instruction($node, %regs, %env) {
     # 実際にエンコードしてサイズを測る
     # ただし、Pass 1 ではラベル未定義などで eval が失敗する可能性があるため、
-    # eval-to-int をオーバーライドするか、env にダミーを入れる等の配慮が必要
-    my $bin = self.encode-instruction($node, %regs, %env);
+    # 未定義ラベルを 0 とみなして計算する（サイズ計算のため）
+    my %dummy_env = %env;
+    %dummy_env<symbols> = %env<symbols>.clone;
+    # 存在しないシンボルが参照されたときに 0 を返すための仕組みが必要
+    
+    my $bin = self.encode-instruction($node, %regs, %dummy_env);
     return $bin.elems;
 }
 

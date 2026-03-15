@@ -4,7 +4,7 @@ use Rakusk;
 use lib 't';
 use TestHelper;
 
-plan :skip-all("Failing with binary mismatch at offset 0x24");
+# plan :skip-all("Failing with binary mismatch at offset 0x24");
 
 subtest "Harib00h (Day 03)" => {
     my $asm = q:to/ASM/;

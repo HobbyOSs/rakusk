@@ -13,7 +13,7 @@ has Int $.bit_mode is rw = 16;
 
 method assemble(%regs, %symbols = {}) {
     my $pc = 0;
-    $!bit_mode = 16;
+    # bit_mode はコンストラクタで渡された値を初期値とする
     $!output = Buf.new();
     for @!ast -> $node {
         if $node ~~ PseudoNode && $node.mnemonic eq 'ORG' {
@@ -30,7 +30,7 @@ method assemble(%regs, %symbols = {}) {
             next;
         }
 
-        my %env = symbols => %symbols, PC => $pc;
+        my %env = symbols => %symbols, PC => $pc, strict_eval => True;
         my $bin = self.encode-node($node, %regs, %env);
 
         if $bin.defined {

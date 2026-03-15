@@ -3,6 +3,7 @@ unit module Rakusk::Grammar;
 use JSON::Fast;
 use Rakusk::AST;
 use Rakusk::Util;
+use Rakusk::Log;
 
 # 1. 外部データの読み込み
 # Rakusk::Util からインポートされる %INST_DATA, %REGS_DATA を使用
@@ -18,34 +19,34 @@ for %INST_DATA.kv -> $key, $val {
 # バリアントの優先順位付け: 特殊な（短い）命令を優先する
 for %MNEMONIC_MAP.kv -> $m, $variants {
     %MNEMONIC_MAP{$m} = [ $variants.sort({
-        # 優先度スコア: 低いほど優先
-        # 1. pseudo (最優先)
-        # 2. short-imm
-        # 3. short-jump
-        # 4. moffs (A0-A3)
-        # 5. base_opcode を持つもの (MOV AX, imm 等)
-        # 6. その他
-        my $v_a = $^a;
-        my $v_b = $^b;
-        my $score_a = do {
-            my $type = $v_a<type> // '';
-            if $type eq 'pseudo' { 0 }
-            elsif $type eq 'short-imm' { 1 }
-            elsif $type eq 'short-jump' { 2 }
-            elsif $type ~~ /moffs/ { 3 }
-            elsif $v_a<base_opcode> { 4 }
-            else { 5 }
-        };
-        my $score_b = do {
-            my $type = $v_b<type> // '';
-            if $type eq 'pseudo' { 0 }
-            elsif $type eq 'short-imm' { 1 }
-            elsif $type eq 'short-jump' { 2 }
-            elsif $type ~~ /moffs/ { 3 }
-            elsif $v_b<base_opcode> { 4 }
-            else { 5 }
-        };
-        $score_a <=> $score_b;
+                # 優先度スコア: 低いほど優先
+                # 1. pseudo (最優先)
+                # 2. short-imm
+                # 3. short-jump
+                # 4. moffs (A0-A3)
+                # 5. base_opcode を持つもの (MOV AX, imm 等)
+                # 6. その他
+                my $v_a = $^a;
+                my $v_b = $^b;
+                my $score_a = do {
+                    my $type = $v_a<type> // '';
+                    if $type eq 'pseudo' { 0 }
+                    elsif $type eq 'short-imm' { 1 }
+                    elsif $type eq 'short-jump' { 2 }
+                    elsif $type ~~ /moffs/ { 3 }
+                    elsif $v_a<base_opcode> { 4 }
+                    else { 5 }
+                };
+                my $score_b = do {
+                    my $type = $v_b<type> // '';
+                    if $type eq 'pseudo' { 0 }
+                    elsif $type eq 'short-imm' { 1 }
+                    elsif $type eq 'short-jump' { 2 }
+                    elsif $type ~~ /moffs/ { 3 }
+                    elsif $v_b<base_opcode> { 4 }
+                    else { 5 }
+                };
+                $score_a <=> $score_b;
     }) ];
 }
 
@@ -64,13 +65,13 @@ grammar Assembler is export {
     # 各文は改行またはファイル末尾で終わる
     rule statement {
         [
-        | <label_stmt> <.ws> [ <mnemonic_stmt> | <opcode_stmt> ]?
-        | <declare_stmt>
-        | <export_sym_stmt>
-        | <extern_sym_stmt>
-        | <config_stmt>
-        | <mnemonic_stmt>
-        | <opcode_stmt>
+            | <label_stmt> <.ws> [ <mnemonic_stmt> | <opcode_stmt> ]?
+            | <declare_stmt>
+            | <export_sym_stmt>
+            | <extern_sym_stmt>
+            | <config_stmt>
+            | <mnemonic_stmt>
+            | <opcode_stmt>
         ]
         [ \n | $ ]
     }
@@ -85,11 +86,11 @@ grammar Assembler is export {
         | "'" <( [ [ \\ . ] | <-[ ' ]> ]* )> "'"
     }
     token reg { :i [ RAX|RBX|RCX|RDX|RSI|RDI|RBP|RSP|R8|R9|R10|R11|R12|R13|R14|R15
-                | EAX|EBX|ECX|EDX|ESI|EDI|EBP|ESP
-                | AX|BX|CX|DX|SI|DI|BP|SP
-                | AL|CL|DL|BL|AH|CH|DH|BH
-                | ES|CS|SS|DS|FS|GS
-                | CR0|CR2|CR3|CR4 ] }
+            | EAX|EBX|ECX|EDX|ESI|EDI|EBP|ESP
+            | AX|BX|CX|DX|SI|DI|BP|SP
+            | AL|CL|DL|BL|AH|CH|DH|BH
+            | ES|CS|SS|DS|FS|GS
+            | CR0|CR2|CR3|CR4 ] }
 
     # 文の定義
     rule label_stmt { <label> }
@@ -101,7 +102,7 @@ grammar Assembler is export {
 
     rule mnemonic_stmt { <mnemonic_op_any> <operand_list> }
     token opcode_stmt { <mnemonic_op_any> }
-    token mnemonic_op_any { 
+    token mnemonic_op_any {
         | :i @( %MNEMONIC_MAP.keys.sort({ $^b.chars <=> $^a.chars }) )
         | <ident>
     }
@@ -135,19 +136,22 @@ grammar Assembler is export {
 
     rule addressing {
         '['
-        [ <base=reg> | <disp=exp> ]?
-        [
-            <.ws> <[ + \- ]> <.ws>
+            [ <base=reg> | <disp=exp> ]?
             [
-                | <index=reg> [ <.ws> '*' <.ws> <scale=num_lit> ]?
-                | <disp=exp>
-            ]
-        ]*
-        ']'
+                <.ws> <[ + \- ]> <.ws>
+                [
+                    | <index=reg> [ <.ws> '*' <.ws> <scale=num_lit> ]?
+                    | <disp=exp>
+                ]
+            ]*
+            ']'
     }
 }
 
-class AssemblerActions is export {
+class AssemblerActions is export does Evaluator {
+    has Int $.bit_mode is rw = 16;
+    has %.symbols;
+
     method TOP($/) {
         make $<statement>».made.grep(*.defined);
     }
@@ -172,7 +176,13 @@ class AssemblerActions is export {
     }
 
     method declare_stmt($/) {
-        make DeclareStmt.new(name => $<ident>.Str, value => $<exp>.made);
+        my $name = $<ident>.Str;
+        my $val_expr = $<exp>.made;
+        my $node = DeclareStmt.new(name => $name, value => $val_expr);
+        # パース中にシンボルを登録し、以降のバリアント選択で利用可能にする
+        my $val = self.eval-to-any($val_expr, { symbols => %!symbols });
+        %!symbols{$name} = $val if $val ~~ Int;
+        make $node;
     }
 
     method export_sym_stmt($/) {
@@ -184,7 +194,12 @@ class AssemblerActions is export {
     }
 
     method config_stmt($/) {
-        make ConfigStmt.new(type => $<config_type>.Str.uc, value => $<exp>.made);
+        my $type = $<config_type>.Str.uc;
+        my $node = ConfigStmt.new(type => $type, value => $<exp>.made);
+        if $type eq 'BITS' {
+            $!bit_mode = self.eval-to-int($node.value, {});
+        }
+        make $node;
     }
 
     method opcode_stmt($/) {
@@ -200,7 +215,7 @@ class AssemblerActions is export {
         my @ops = $<operand_list>.made;
 
         # 特殊な最適化やバリアント選択の優先処理
-        if self!try-special-variant($m, @variants, @ops) -> $special {
+        if self!try-special-variant($m, @variants, @ops, { symbols => %!symbols }) -> $special {
             make $special;
             return;
         }
@@ -211,41 +226,46 @@ class AssemblerActions is export {
             make PseudoNode.new(mnemonic => $m, operands => @ops);
         } else {
             my %final_info = $info ?? %$info !! { type => 'unknown' };
+            if %final_info<type> eq 'unknown' {
+                die "Error: No matching variant for mnemonic '$m' with operands [{@ops.map(*.Str).join(', ')}]";
+            }
             make InstructionNode.new(mnemonic => $m, operands => @ops, info => %final_info);
         }
     }
 
-    method !try-special-variant($m, @variants, @ops) {
+    method !try-special-variant($m, @variants, @ops, %env) {
         # 1. JMP/CALL の絶対アドレス指定に対する near-jump 優先
         if $m eq 'JMP' | 'CALL' && @ops.elems == 1 && @ops[0] ~~ Immediate {
-             my $ev = @ops[0].expr.eval({});
-             if $ev ~~ NumberExp {
-                 my $near = @variants.grep({ ($_<type> // '') eq 'near-jump' })[0];
-                 return InstructionNode.new(mnemonic => $m, operands => @ops, info => $near) if $near;
-             }
+            my $ev = @ops[0].expr.eval({});
+            # eval({}) for labels now returns the ImmExp object itself (self), not a NumberExp.
+            # So this check only passes for numeric literals or symbols defined with EQU.
+            if $ev ~~ NumberExp {
+                my $near = @variants.grep({ ($_<type> // '') eq 'near-jump' })[0];
+                return InstructionNode.new(mnemonic => $m, operands => @ops, info => $near) if $near;
+            }
         }
 
         # 2. 算術演算での imm8 最適化 (83 /x ib 形式の優先)
         if $m ~~ /^(ADD|SUB|CMP|AND|OR|XOR|ADC|SBB)$/ && @ops.elems == 2 && @ops[1] ~~ Immediate && @ops[0] ~~ Register {
-             my $ev = @ops[1].expr.eval({});
-             if $ev ~~ NumberExp && $ev.value.abs <= 127 {
-                 my @matches = @variants.grep({ 
-                     (($_<type> // '') ~~ 'short-imm' | 'reg-imm8')
-                     && ($_<width> // 0) == @ops[0].width
-                     && (!$_<short_reg> || $_<short_reg>.uc eq @ops[0].name.uc)
-                 });
+            my $ev = @ops[1].expr.eval(%env);
+            if $ev ~~ NumberExp && $ev.value.abs <= 127 {
+                my @matches = @variants.grep({
+                        (($_<type> // '') ~~ 'short-imm' | 'reg-imm8')
+                        && ($_<width> // 0) == @ops[0].width
+                        && (!$_<short_reg> || $_<short_reg>.uc eq @ops[0].name.uc)
+                });
                  
-                 my $best;
-                 my $width = @ops[0].width;
-                 if $width == 8 {
-                     $best = @matches.grep({ ($_<type> // '') eq 'short-imm' })[0] // @matches[0];
-                 } elsif $width == 16 {
-                     $best = @matches.grep({ ($_<type> // '') eq 'short-imm' })[0] // @matches[0];
-                 } else { # 32-bit
-                     $best = @matches.grep({ ($_<type> // '') eq 'reg-imm8' })[0] // @matches[0];
-                 }
-                 return InstructionNode.new(mnemonic => $m, operands => @ops, info => $best) if $best;
-             }
+                my $best;
+                my $width = @ops[0].width;
+                if $width == 8 {
+                    $best = @matches.grep({ ($_<type> // '') eq 'short-imm' })[0] // @matches[0];
+                } elsif $width == 16 {
+                    $best = @matches.grep({ ($_<type> // '') eq 'short-imm' })[0] // @matches[0];
+                } else { # 32-bit
+                    $best = @matches.grep({ ($_<type> // '') eq 'reg-imm8' })[0] // @matches[0];
+                }
+                return InstructionNode.new(mnemonic => $m, operands => @ops, info => $best) if $best;
+            }
         }
         return Nil;
     }
@@ -269,6 +289,7 @@ class AssemblerActions is export {
     method !match-variant($v, @ops) {
         my $type = $v<type> // '';
         my $v_width = $v<width> // 0;
+        debug "Checking variant: type=$type width=$v_width ops={@ops.map(*.Str).join(', ')}";
 
         given $type {
             when 'pseudo' { return True; }
@@ -276,8 +297,8 @@ class AssemblerActions is export {
                 return False unless @ops.elems == 2;
                 return False unless @ops[0] ~~ Register && @ops[1] ~~ Register;
                 return (@ops[0].width == @ops[1].width || (@ops[0].width == 16 && @ops[1].width == 32) || (@ops[0].width == 32 && @ops[1].width == 16))
-                    && !@ops[0].is-segment && !@ops[1].is-segment
-                    && !@ops[0].is-control && !@ops[1].is-control;
+                && !@ops[0].is-segment && !@ops[1].is-segment
+                && !@ops[0].is-control && !@ops[1].is-control;
             }
             when 'sreg-reg' {
                 return False unless @ops.elems == 2;
@@ -290,35 +311,59 @@ class AssemblerActions is export {
                 return @ops[1].is-segment && @ops[0].width == 16;
             }
             when 'reg-mem' {
-                return @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Memory
-                    && ($v_width == 0 || @ops[0].width == $v_width);
+                return False unless @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Memory;
+                if $v_width != 0 {
+                    return False if @ops[0].width != $v_width;
+                }
+                return True;
             }
             when 'mem-reg' {
-                return @ops.elems == 2 && @ops[0] ~~ Memory && @ops[1] ~~ Register
-                    && ($v_width == 0 || @ops[1].width == $v_width);
+                return False unless @ops.elems == 2 && @ops[0] ~~ Memory && @ops[1] ~~ Register;
+                if $v_width != 0 {
+                    return False if @ops[1].width != $v_width;
+                }
+                return True;
             }
             when 'mem-imm8' {
                 return False unless @ops.elems == 2 && @ops[0] ~~ Memory && @ops[1] ~~ Immediate;
                 if @ops[0].size_prefix {
-                    return @ops[0].size_prefix eq 'BYTE';
+                    return False unless @ops[0].size_prefix eq 'BYTE';
                 }
                 return $v_width == 8;
             }
             when 'mem-imm16' {
                 return False unless @ops.elems == 2 && @ops[0] ~~ Memory && @ops[1] ~~ Immediate;
                 if @ops[0].size_prefix {
-                    return @ops[0].size_prefix eq 'WORD' || @ops[0].size_prefix eq 'DWORD';
+                    if @ops[0].size_prefix eq 'WORD' { return $v_width == 16; }
+                    if @ops[0].size_prefix eq 'DWORD' { return $v_width == 32; }
+                    return False;
                 }
-                return $v_width == 16 || $v_width == 32;
+                # プレフィックスがない場合は、バリアントの幅が現在のモードに一致するか確認
+                return $v_width == (self.bit_mode == 16 ?? 16 !! 32);
             }
             when 'reg-imm8' {
                 return False unless @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Immediate;
                 return False if $v<short_reg> && @ops[0].name.uc ne $v<short_reg>.uc;
-                return @ops[0].width == ($v_width || 8);
+                my $target_width = $v_width || 8;
+                return False if @ops[0].width != $target_width;
+                
+                # Check value if it's a literal
+                my $ev = @ops[1].expr.eval({});
+                if $ev ~~ NumberExp {
+                    if $target_width == 8 {
+                        return False if $ev.value < -128 || $ev.value > 255;
+                    } else {
+                        return False if $ev.value < -128 || $ev.value > 127;
+                    }
+                }
+                return True;
             }
             when 'reg-imm16' {
                 return False unless @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Immediate;
                 return False if $v<short_reg> && @ops[0].name.uc ne $v<short_reg>.uc;
+                if $v_width {
+                    return @ops[0].width == $v_width;
+                }
                 return @ops[0].width == 16 || @ops[0].width == 32;
             }
             when 'reg-imm32' {
@@ -327,14 +372,26 @@ class AssemblerActions is export {
             when 'short-imm' {
                 return False unless @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Immediate;
                 return False if $v<short_reg> && @ops[0].name.uc ne $v<short_reg>.uc;
-                return @ops[0].width == ($v_width || 8);
+                return False if $v_width && @ops[0].width != $v_width;
+                return True;
+            }
+            when 'reg-1' {
+                return False unless @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Immediate;
+                return False if $v_width && @ops[0].width != $v_width;
+                my $ev = @ops[1].expr.eval({});
+                return $ev ~~ NumberExp && $ev.value == 1;
+            }
+            when 'reg-cl' {
+                return False unless @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Register;
+                return False if $v_width && @ops[0].width != $v_width;
+                return @ops[1].name eq 'CL';
             }
             when 'short-jump' | 'near-jump' | 'imm8' {
                 return @ops.elems == 1 && @ops[0] ~~ Immediate;
             }
             when 'imm8-short' {
                 return @ops.elems == 2 && @ops[0] ~~ Immediate && @ops[1] ~~ Register
-                    && (!$v<short_reg> || @ops[1].name eq $v<short_reg>.uc);
+                && (!$v<short_reg> || @ops[1].name eq $v<short_reg>.uc);
             }
             when 'far-jump' {
                 return @ops.elems == 1 && @ops[0] ~~ SegmentedAddress;
@@ -344,27 +401,27 @@ class AssemblerActions is export {
             }
             when 'reg-cr' {
                 return @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Register
-                    && (%REGS_DATA{@ops[1].name.uc}<type> // '') eq 'control';
+                && (%REGS_DATA{@ops[1].name.uc}<type> // '') eq 'control';
             }
             when 'cr-reg' {
                 return @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Register
-                    && (%REGS_DATA{@ops[0].name.uc}<type> // '') eq 'control';
+                && (%REGS_DATA{@ops[0].name.uc}<type> // '') eq 'control';
             }
             when 'al-moffs' {
                 return @ops.elems == 2 && @ops[0] ~~ Register && @ops[0].name eq 'AL' && @ops[1] ~~ Memory
-                    && !@ops[1].base && !@ops[1].index;
+                && !@ops[1].base && !@ops[1].index;
             }
             when 'ax-moffs' {
                 return @ops.elems == 2 && @ops[0] ~~ Register && @ops[0].name eq 'AX' && @ops[1] ~~ Memory
-                    && !@ops[1].base && !@ops[1].index;
+                && !@ops[1].base && !@ops[1].index;
             }
             when 'moffs-al' {
                 return @ops.elems == 2 && @ops[0] ~~ Memory && @ops[1] ~~ Register && @ops[1].name eq 'AL'
-                    && !@ops[0].base && !@ops[0].index;
+                && !@ops[0].base && !@ops[0].index;
             }
             when 'moffs-ax' {
                 return @ops.elems == 2 && @ops[0] ~~ Memory && @ops[1] ~~ Register && @ops[1].name eq 'AX'
-                    && !@ops[0].base && !@ops[0].index;
+                && !@ops[0].base && !@ops[0].index;
             }
             when 'reg-reg-imm8' {
                 return @ops.elems == 3 && @ops[0] ~~ Register && @ops[1] ~~ Register && @ops[2] ~~ Immediate;
@@ -451,19 +508,15 @@ class AssemblerActions is export {
     method factor($/) {
         if $<reg> {
             make $<reg>.made;
-        }
-        elsif $<addressing> {
+        } elsif $<addressing> {
             make $<addressing>.made;
-        }
-        else {
+        } else {
             my $f;
             if $<hex_lit> {
                 $f = HexFactor.new(value => $<hex_lit>.Str);
-            }
-            elsif $<num_lit> {
+            } elsif $<num_lit> {
                 $f = NumberFactor.new(value => $<num_lit>.Int);
-            }
-            elsif $<string_lit> {
+            } elsif $<string_lit> {
                 my $s = $<string_lit>.Str;
                 if $/.Str.starts-with("'") {
                     if $s.chars == 1 {
@@ -474,11 +527,9 @@ class AssemblerActions is export {
                 } else {
                     $f = StringFactor.new(value => $s);
                 }
-            }
-            elsif $<ident> {
+            } elsif $<ident> {
                 $f = IdentFactor.new(value => $<ident>.Str);
-            }
-            elsif $/.Str eq '$' {
+            } elsif $/.Str eq '$' {
                 $f = IdentFactor.new(value => '$');
             }
 
@@ -501,11 +552,9 @@ class AssemblerActions is export {
         for $/.caps -> $cap {
             if $cap.key eq 'index' {
                 $index = Register.new(name => $cap.value.Str.uc);
-            }
-            elsif $cap.key eq 'scale' {
+            } elsif $cap.key eq 'scale' {
                 $scale = $cap.value.Int;
-            }
-            elsif $cap.key eq 'disp' {
+            } elsif $cap.key eq 'disp' {
                 $disp = $cap.value.made;
             }
         }

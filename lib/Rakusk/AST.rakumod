@@ -24,6 +24,7 @@ sub EXPORT {
         ConfigStmt     => Rakusk::AST::Statement::ConfigStmt,
         Expression     => Rakusk::AST::Expression::Expression,
         NumberExp      => Rakusk::AST::Expression::NumberExp,
+        StringExp      => Rakusk::AST::Expression::StringExp,
         ImmExp         => Rakusk::AST::Expression::ImmExp,
         MultExp        => Rakusk::AST::Expression::MultExp,
         AddExp         => Rakusk::AST::Expression::AddExp,

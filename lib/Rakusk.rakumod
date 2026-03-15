@@ -19,11 +19,12 @@ our sub assemble(Str $source) is export {
         die "Syntax error in assembly source";
     }
     my @ast = $match.made;
+    my $bit_mode = $actions.bit_mode;
 
     # 3. Pass 1 (シンボル解決とPC計算)
-    my $pass1 = Pass1.new().evaluate(@ast, %regs);
+    my $pass1 = Pass1.new(:$bit_mode).evaluate(@ast, %regs);
 
     # 4. Pass 2 (バイナリ生成)
-    my $pass2 = Pass2.new(ast => $pass1.ast);
+    my $pass2 = Pass2.new(ast => $pass1.ast, :$bit_mode);
     return $pass2.assemble(%regs, $pass1.symbols);
 }

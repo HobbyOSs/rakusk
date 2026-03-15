@@ -4,7 +4,7 @@ use Rakusk;
 use lib 't';
 use TestHelper;
 
-plan :skip-all("Failing with complex binary mismatch");
+# plan :skip-all("Failing with complex binary mismatch");
 
 subtest "Harib00i (Day 03)" => {
     my $asm = q:to/ASM/;

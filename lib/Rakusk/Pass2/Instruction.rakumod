@@ -27,14 +27,14 @@ method encode-instruction($node, %regs, %env) {
 method get-prefixes($node, %info) {
     my $bin = Buf.new();
     
-    # オペランドサイズプレフィックス (0x66)
-    if self.needs_66h($node, %info) {
-        $bin.push(0x66);
-    }
-    
     # アドレスサイズプレフィックス (0x67)
     if self.needs_67h($node) {
         $bin.push(0x67);
+    }
+    
+    # オペランドサイズプレフィックス (0x66)
+    if self.needs_66h($node, %info) {
+        $bin.push(0x66);
     }
     
     return $bin;
@@ -43,7 +43,11 @@ method get-prefixes($node, %info) {
 method needs_66h($node, %info) {
     my $mnemonic = $node.mnemonic;
     my @ops = $node.operands;
-    
+    my $type = %info<type> // '';
+
+    # コントロールレジスタ操作 (MOV EAX, CR0等) は常に 0x66 不要
+    return False if $type eq 'reg-cr' | 'cr-reg';
+
     # IN/OUT の特殊ルール
     if $mnemonic ~~ 'IN' | 'OUT' {
         # gosk/pkg/asmdb/instruction_search.go: getPrefix66SizeForInOut
@@ -82,9 +86,10 @@ method needs_66h($node, %info) {
     }
 
     # 命令定義(JSON)側での指定がある場合
-    if %info<type> ~~ 'reg-imm16' | 'mem-imm16' | 'reg-reg-imm16' {
+    if %info<type> ~~ 'reg-imm16' | 'mem-imm16' | 'reg-reg-imm16' | 'reg-imm8' | 'mem-imm8' | 'reg-reg-imm8' {
         if self.bit_mode == 16 {
             # 32bit幅のバリアントなら0x66が必要
+            # OR EAX, imm8 等のバリアント (%info<width> == 32) に対応
             return True if (%info<width> // 0) == 32;
         } else {
             return True if (%info<width> // 0) == 16;
@@ -99,8 +104,8 @@ method needs_67h($node) {
         if $op ~~ Memory {
             my $base = $op.base;
             my $index = $op.index;
-            my $is_32bit_addr = ($base && $base ~~ Register && $base.width == 32) 
-                             || ($index && $index ~~ Register && $index.width == 32);
+            my $is_32bit_addr = ($base && $base ~~ Register && $base.width == 32)
+            || ($index && $index ~~ Register && $index.width == 32);
             
             return True if self.bit_mode == 16 && $is_32bit_addr;
             return True if self.bit_mode == 32 && !$is_32bit_addr;
@@ -184,6 +189,10 @@ method encode-modrm-sib-disp($node, %info, %env) {
             my $modrm = pack-modrm(mod => 3, reg => @ops[0].index, rm => @ops[1].index);
             return Buf.new($modrm);
         }
+        when 'al-moffs' | 'ax-moffs' | 'moffs-al' | 'moffs-ax' {
+            # moffs 形式は ModR/M バイトを持たない
+            return Buf.new();
+        }
     }
     return Buf.new();
 }
@@ -209,6 +218,10 @@ method encode-immediate($node, %info, %env) {
                 if @ops.grep({ $_ ~~ Register && $_.width == 32 }) {
                     $width = 32;
                 } elsif @ops.grep({ $_ ~~ Register && $_.width == 16 }) {
+                    $width = 16;
+                } elsif @ops.grep({ $_ ~~ Memory && ($_.size_prefix // '') eq 'DWORD' }) {
+                    $width = 32;
+                } elsif @ops.grep({ $_ ~~ Memory && ($_.size_prefix // '') eq 'WORD' }) {
                     $width = 16;
                 } else {
                     $width = (self.bit_mode == 16 ?? 16 !! 32);
@@ -236,6 +249,12 @@ method encode-immediate($node, %info, %env) {
             
             $bin ~= pack-le($offset, $use_32bit ?? 32 !! 16);
             $bin ~= pack-le($selector, 16);
+        }
+        when 'al-moffs' | 'ax-moffs' | 'moffs-al' | 'moffs-ax' {
+            my $mem_op = @ops.grep(Memory)[0];
+            my $val = self.eval-to-int($mem_op.disp, %env);
+            # moffs のアドレス幅は 16-bit モードなら 16-bit、32-bit モードなら 32-bit
+            $bin ~= pack-le($val, self.bit_mode == 16 ?? 16 !! 32);
         }
     }
     return $bin;
@@ -270,7 +289,7 @@ method encode_mem_op_16($mem, %env) {
     elsif $base eq 'DI' && $index eq '' { $rm = 5; }
     elsif $base eq 'BP' && $index eq '' { $rm = 6; }
     elsif $base eq 'BX' && $index eq '' { $rm = 7; }
-    elsif $base eq '' && $index eq '' { $rm = 6; } 
+    elsif $base eq '' && $index eq '' { $rm = 6; }
     else { return (0, 0, Buf.new(), Buf.new(), False); }
 
     my $mod;
