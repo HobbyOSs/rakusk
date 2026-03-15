@@ -10,5 +10,6 @@
   "FORMAT": { "type": "pseudo" },
   "FILE": { "type": "pseudo" },
   "GLOBAL": { "type": "pseudo" },
-  "SECTION": { "type": "pseudo" }
+  "SECTION": { "type": "pseudo" },
+  "EXTERN": { "type": "pseudo" }
 }

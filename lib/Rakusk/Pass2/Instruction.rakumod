@@ -153,6 +153,22 @@ method encode-modrm-sib-disp($node, %info, %env) {
             my $modrm = pack-modrm(mod => 3, reg => @ops[1].index, rm => @ops[0].index);
             return Buf.new($modrm);
         }
+        when 'sreg' {
+            # PUSH/POP SREG (06, 0E, 16, 1E, 0F A0, 0F A8 等)
+            my $reg = @ops[0];
+            my $base = %info<opcode>.parse-base(16);
+            if $reg.name eq 'FS' | 'GS' {
+                # 0F A0/A1 or 0F A8/A9
+                # JSON側でうまく定義する必要があるが、ここでは暫定的に
+                return Buf.new(0x0F, $base + $reg.index); 
+            }
+            # ES=0, CS=1, SS=2, DS=3
+            # PUSH: 0x06 + (reg.index * 8) ?? NASMのopcodeを確認
+            # ES: 06, CS: 0E, SS: 16, DS: 1E -> index * 8
+            # POP: 07, 0F, 17, 1F -> index * 8 + 1
+            my $op = $base + ($reg.index * 8);
+            return Buf.new($op);
+        }
         when 'reg' | 'reg-imm8' | 'reg-imm16' {
             return Buf.new() if %info<base_opcode>;
             my $reg_field = %info<extension> // @ops[0].index;
