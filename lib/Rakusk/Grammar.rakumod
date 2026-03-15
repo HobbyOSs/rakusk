@@ -304,12 +304,12 @@ class AssemblerActions is export does Evaluator {
             when 'sreg-reg' {
                 return False unless @ops.elems == 2;
                 return False unless @ops[0] ~~ Register && @ops[1] ~~ Register;
-                return @ops[0].is-segment && @ops[1].width == 16;
+                return @ops[0].is-segment && (@ops[1].width == 16 || @ops[1].width == 32);
             }
             when 'reg-sreg' {
                 return False unless @ops.elems == 2;
                 return False unless @ops[0] ~~ Register && @ops[1] ~~ Register;
-                return @ops[1].is-segment && @ops[0].width == 16;
+                return @ops[1].is-segment && (@ops[0].width == 16 || @ops[0].width == 32);
             }
             when 'reg-mem' {
                 return False unless @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Memory;
@@ -438,6 +438,7 @@ class AssemblerActions is export does Evaluator {
             }
             when 'reg' {
                 return False unless @ops.elems == 1 && @ops[0] ~~ Register;
+                return False if @ops[0].is-segment || @ops[0].is-control;
                 return False if $v_width && @ops[0].width != $v_width;
                 return True;
             }
@@ -452,6 +453,9 @@ class AssemblerActions is export does Evaluator {
                 return False unless $r1 ~~ Register && $r2 ~~ Register;
                 return False if $v_width && $r1.width != $v_width;
                 return $r2.name eq 'DX' && ($r1.name eq 'AL' | 'AX' | 'EAX');
+            }
+            when 'sreg' {
+                return @ops.elems == 1 && @ops[0] ~~ Register && @ops[0].is-segment;
             }
             return False;
         }

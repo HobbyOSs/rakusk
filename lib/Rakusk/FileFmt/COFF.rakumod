@@ -15,7 +15,7 @@ my constant SECTION_TEXT_FLAGS = IMAGE_SCN_CNT_CODE +| IMAGE_SCN_MEM_EXECUTE +| 
 my constant SECTION_DATA_FLAGS = IMAGE_SCN_CNT_INITIALIZED_DATA +| IMAGE_SCN_MEM_READ +| IMAGE_SCN_MEM_WRITE +| IMAGE_SCN_ALIGN_1BYTES;
 my constant SECTION_BSS_FLAGS  = IMAGE_SCN_CNT_UNINITIALIZED_DATA +| IMAGE_SCN_MEM_READ +| IMAGE_SCN_MEM_WRITE +| IMAGE_SCN_ALIGN_1BYTES;
 
-method wrap-wcoff(%symbols, $output, $source_file_name, @global_symbols, @extern_symbols) {
+method wrap-wcoff(%symbols, $output, $source_file_name, @global_symbols, @extern_symbols, @relocations = [], @symbol_order = []) {
     my $bin = Buf.new;
     
     # 1. Header (20 bytes)
@@ -32,7 +32,9 @@ method wrap-wcoff(%symbols, $output, $source_file_name, @global_symbols, @extern
     my $data_size = 0;
     my $bss_size = 0;
     
-    my $symbol_table_offset = 20 + 40 * $num_sections + $text_size + $data_size;
+    my $reloc_table_offset = 20 + 40 * $num_sections + $text_size + $data_size;
+    my $reloc_size = @relocations.elems * 10;
+    my $symbol_table_offset = $reloc_table_offset + $reloc_size;
     
     # Symbols: .file, sections, then globals/externs
     my @syms;
@@ -40,23 +42,53 @@ method wrap-wcoff(%symbols, $output, $source_file_name, @global_symbols, @extern
     @syms.push({ name => ".file", value => 0, section => -2, storage => 103, aux => self.pack-str-pad($source_file_name, 18) });
     # section symbols
     for 1..$num_sections -> $i {
-        @syms.push({ name => @section_names[$i-1], value => 0, section => $i, storage => 3, aux => pack-le($i == 1 ?? $text_size !! 0, 32) ~ Buf.new(0 xx 14) });
+        my $num_relocs = ($i == 1 ?? @relocations.elems !! 0);
+        @syms.push({ 
+            name => @section_names[$i-1], 
+            value => 0, 
+            section => $i, 
+            storage => 3, 
+            aux => pack-le($i == 1 ?? $text_size !! 0, 32) 
+                 ~ pack-le($num_relocs, 16) 
+                 ~ pack-le(0, 16) # NumberOfLinenumbers
+                 ~ pack-le(0, 32) # Checksum
+                 ~ pack-le(0, 16) # Number
+                 ~ pack-le(0, 8)  # Selection
+                 ~ Buf.new(0 xx 3) # Unused
+        });
     }
     
+    for @extern_symbols -> $name {
+        @syms.push({ name => $name, value => 0, section => 0, storage => 2 });
+    }
     for @global_symbols -> $name {
         my $val = %symbols{$name} // 0;
         @syms.push({ name => $name, value => $val, section => 1, storage => 2 });
-    }
-    for @extern_symbols -> $name {
-        @syms.push({ name => $name, value => 0, section => 0, storage => 2 });
     }
     
     my $num_symbols = 0;
     my $symbol_table_bin = Buf.new;
     my $string_table_bin = Buf.new;
     
+    # 文字列テーブルの事前構築
+    # 順序: 定義順 (@symbol_order) のうち 8文字超のもの
+    my %name_offsets;
+    for @symbol_order -> $name {
+        if $name.chars > 8 && !%name_offsets{$name}.defined {
+            %name_offsets{$name} = $string_table_bin.elems + 4;
+            $string_table_bin.append($name.encode('ascii'));
+            $string_table_bin.push(0);
+        }
+    }
+
     for @syms -> $s {
-        my $name_bin = self.coff-name($s<name>, $string_table_bin);
+        my $name_bin;
+        if %name_offsets{$s<name>}.defined {
+            $name_bin = pack-le(0, 32) ~ pack-le(%name_offsets{$s<name>}, 32);
+        } else {
+            # 8文字以下の場合は直接格納、それ以外は通常通り (ただし事前構築済みのはず)
+            $name_bin = self.coff-name($s<name>, $string_table_bin);
+        }
         $symbol_table_bin ~= $name_bin;
         $symbol_table_bin ~= pack-le($s<value>, 32);
         $symbol_table_bin ~= pack-le($s<section>, 16);
@@ -87,9 +119,9 @@ method wrap-wcoff(%symbols, $output, $source_file_name, @global_symbols, @extern
     $bin ~= pack-le(0, 32); # VirtualAddress
     $bin ~= pack-le($text_size, 32);
     $bin ~= pack-le(20 + 40 * $num_sections, 32); # PointerToRawData
-    $bin ~= pack-le($symbol_table_offset, 32); # PointerToRelocations (matching gosk)
+    $bin ~= pack-le((@relocations.elems > 0 || ($text_size > 0 && @global_symbols.elems > 0)) ?? $reloc_table_offset !! 0, 32); # PointerToRelocations
     $bin ~= pack-le(0, 32); # PointerToLinenumbers
-    $bin ~= pack-le(0, 16); # NumberOfRelocations
+    $bin ~= pack-le(@relocations.elems, 16); # NumberOfRelocations
     $bin ~= pack-le(0, 16); # NumberOfLinenumbers
     $bin ~= pack-le(SECTION_TEXT_FLAGS, 32); # Characteristics
     
@@ -111,6 +143,13 @@ method wrap-wcoff(%symbols, $output, $source_file_name, @global_symbols, @extern
     
     # Raw Data
     $bin ~= $output;
+
+    # Relocations
+    for @relocations -> $r {
+        $bin ~= pack-le($r<offset>, 32);
+        $bin ~= pack-le($r<sym_idx>, 32);
+        $bin ~= pack-le($r<type>, 16); # 20 = REL_I386_REL32
+    }
     
     # Symbol Table
     $bin ~= $symbol_table_bin;

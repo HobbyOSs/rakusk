@@ -39,6 +39,7 @@ our sub assemble(Str $source) is export {
         source_file_name => $pass1.source_file_name,
         global_symbols => $pass1.global_symbols,
         extern_symbols => $pass1.extern_symbols,
+        symbol_order => $pass1.symbol_order,
     );
     my $res = $pass2.assemble(%regs, $pass1.symbols);
     

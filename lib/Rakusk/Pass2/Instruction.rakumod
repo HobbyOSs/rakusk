@@ -26,6 +26,7 @@ method encode-instruction($node, %regs, %env) {
 
 method get-prefixes($node, %info) {
     my $bin = Buf.new();
+    my @ops = $node.operands;
     
     # アドレスサイズプレフィックス (0x67)
     if self.needs_67h($node) {
@@ -37,6 +38,11 @@ method get-prefixes($node, %info) {
         $bin.push(0x66);
     }
     
+    # 0x0F プレフィックス (一部の命令)
+    if %info<type> eq 'sreg' && @ops.elems > 0 && @ops[0].name eq 'FS' | 'GS' {
+        $bin.push(0x0F);
+    }
+    
     return $bin;
 }
 
@@ -45,8 +51,14 @@ method needs_66h($node, %info) {
     my @ops = $node.operands;
     my $type = %info<type> // '';
 
-    # コントロールレジスタ操作 (MOV EAX, CR0等) は常に 0x66 不要
+    # コントロールレジスタ操作は常に 0x66 不要
     return False if $type eq 'reg-cr' | 'cr-reg';
+
+    # セグメントレジスタへのMOV (MOV Sreg, reg) は 0x66 不要 (nask互換)
+    return False if $type eq 'sreg-reg';
+
+    # セグメントレジスタ単体 (PUSH/POP SREG) は 0x66 不要
+    return False if $type eq 'sreg';
 
     # IN/OUT の特殊ルール
     if $mnemonic ~~ 'IN' | 'OUT' {
@@ -85,13 +97,11 @@ method needs_66h($node, %info) {
     }
 
     # 命令定義(JSON)側での指定がある場合
-    if %info<type> ~~ 'reg-imm16' | 'mem-imm16' | 'reg-reg-imm16' | 'reg-imm8' | 'mem-imm8' | 'reg-reg-imm8' {
+    if %info<width>.defined {
         if self.bit_mode == 16 {
-            # 32bit幅のバリアントなら0x66が必要
-            # OR EAX, imm8 等のバリアント (%info<width> == 32) に対応
-            return True if (%info<width> // 0) == 32;
-        } else {
-            return True if (%info<width> // 0) == 16;
+            return True if %info<width> == 32;
+        } else { # 32
+            return True if %info<width> == 16;
         }
     }
 
@@ -121,6 +131,18 @@ method get-base-opcode($node, %info) {
         my $reg_op = $node.operands[0];
         my $opcode = %info<base_opcode>.parse-base(16) + $reg_op.index;
         return Buf.new($opcode);
+    }
+
+    if $type eq 'sreg' {
+        my $reg = $node.operands[0];
+        my $base = %info<opcode>.parse-base(16);
+        if $reg.name eq 'FS' | 'GS' {
+            my $op = ($reg.name eq 'FS' ?? 0xA0 !! 0xA8);
+            $op += 1 if $node.mnemonic eq 'POP';
+            return Buf.new($op);
+        }
+        my $op = $base + ($reg.index * 8);
+        return Buf.new($op);
     }
     
     if $type ~~ 'reg-cr' | 'cr-reg' {
@@ -154,20 +176,8 @@ method encode-modrm-sib-disp($node, %info, %env) {
             return Buf.new($modrm);
         }
         when 'sreg' {
-            # PUSH/POP SREG (06, 0E, 16, 1E, 0F A0, 0F A8 等)
-            my $reg = @ops[0];
-            my $base = %info<opcode>.parse-base(16);
-            if $reg.name eq 'FS' | 'GS' {
-                # 0F A0/A1 or 0F A8/A9
-                # JSON側でうまく定義する必要があるが、ここでは暫定的に
-                return Buf.new(0x0F, $base + $reg.index); 
-            }
-            # ES=0, CS=1, SS=2, DS=3
-            # PUSH: 0x06 + (reg.index * 8) ?? NASMのopcodeを確認
-            # ES: 06, CS: 0E, SS: 16, DS: 1E -> index * 8
-            # POP: 07, 0F, 17, 1F -> index * 8 + 1
-            my $op = $base + ($reg.index * 8);
-            return Buf.new($op);
+            # オプコードは get-base-opcode で処理済み
+            return Buf.new();
         }
         when 'reg' | 'reg-imm8' | 'reg-imm16' {
             return Buf.new() if %info<base_opcode>;
@@ -250,9 +260,43 @@ method encode-immediate($node, %info, %env) {
             $bin ~= pack-le($offset, 8);
         }
         when 'near-jump' {
-            my $target = self.eval-to-int(@ops[0], %env);
+            my $target_op = @ops[0];
             my $width = (self.bit_mode == 16 ?? 16 !! 32);
             my $inst_size = (self.bit_mode == 16 ?? 3 !! 5);
+            
+            # WCOFF での EXTERN シンボルへの CALL/JMP 処理
+            if $target_op ~~ Immediate && $target_op.expr.factor ~~ IdentFactor {
+                my $name = $target_op.expr.factor.value;
+                if self.output_format.uc eq 'WCOFF' && self.extern_symbols.grep({ $_ eq $name }) {
+                    # リロケーションの追加
+                    if %env<relocations>.defined {
+                        # sym_idx は .file (2) + sections (3*2=6) = 8
+                        # その後 EXTERN, GLOBAL の順に並ぶ
+                        my $sym_idx = 8;
+                        my $found = False;
+                        for self.extern_symbols -> $e {
+                            if $e eq $name { $found = True; last; }
+                            $sym_idx++;
+                        }
+                        unless $found {
+                            for self.global_symbols -> $g {
+                                if $g eq $name { $found = True; last; }
+                                $sym_idx++;
+                            }
+                        }
+                        %env<relocations>.push({
+                            offset => %env<PC> + 1,
+                            sym_idx => $sym_idx,
+                            type => 20 # REL_I386_REL32
+                        });
+                    }
+                    # EXTERN の場合は 0 をベースにする (gosk / nask に合わせる)
+                    $bin ~= pack-le(0, $width);
+                    return $bin;
+                }
+            }
+            
+            my $target = self.eval-to-int($target_op, %env);
             my $offset = $target - (%env<PC> + $inst_size);
             $bin ~= pack-le($offset, $width);
         }

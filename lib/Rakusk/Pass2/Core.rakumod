@@ -16,6 +16,8 @@ has Str $.output_format is rw = "binary";
 has Str $.source_file_name is rw = "";
 has @.global_symbols = [];
 has @.extern_symbols = [];
+has @.symbol_order = [];
+has @.relocations = [];
 has @.listing;
 
 method assemble(%regs, %symbols = {}) {
@@ -41,7 +43,7 @@ method assemble(%regs, %symbols = {}) {
             next;
         }
 
-        my %env = symbols => %symbols, PC => $pc, strict_eval => True;
+        my %env = symbols => %symbols, PC => $pc, strict_eval => True, relocations => @!relocations;
         my $bin = self.encode-node($node, %regs, %env);
 
         if $bin.defined {
@@ -59,7 +61,7 @@ method assemble(%regs, %symbols = {}) {
     }
 
     if $!output_format.uc eq 'WCOFF' {
-        my $bin = self.wrap-wcoff(%symbols, $!output, $!source_file_name, @!global_symbols, @!extern_symbols);
+        my $bin = self.wrap-wcoff(%symbols, $!output, $!source_file_name, @!global_symbols, @!extern_symbols, @!relocations, @!symbol_order);
         return { output => $bin, :@!listing };
     }
 

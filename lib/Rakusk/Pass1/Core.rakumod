@@ -12,6 +12,7 @@ has Int $.pc is rw = 0;
 has Int $.bit_mode is rw = 16;
 has @.global_symbols is rw = [];
 has @.extern_symbols is rw = [];
+has @.symbol_order is rw = [];
 has Str $.output_format is rw = "binary";
 has Str $.source_file_name is rw = "";
 has @.sections is rw = [];
@@ -25,6 +26,7 @@ method evaluate(@ast, %regs) {
     # bit_mode は初期化せず、コンストラクタで渡された値（またはデフォルト）を維持する
     @!global_symbols = [];
     @!extern_symbols = [];
+    @!symbol_order = [];
 
     for @!ast -> $node {
         my %env = symbols => %!symbols, PC => $!pc;
@@ -37,8 +39,10 @@ method evaluate(@ast, %regs) {
             self.process-pseudo($node, %env);
         } elsif $node ~~ ExportSymStmt {
             self.global_symbols.append($node.symbols);
+            self.symbol_order.append($node.symbols);
         } elsif $node ~~ ExternSymStmt {
             self.extern_symbols.append($node.symbols);
+            self.symbol_order.append($node.symbols);
         }
     }
     return self;
