@@ -1,6 +1,6 @@
 # Progress - rakusk
 
-## 実装済み機能 (Day 01 - Day 15+)
+## 実装済み機能 (Day 01 - Day 15)
 - [x] 基本命令セット (MOV, ADD, SUB, CMP, JMP, CALL, RET, INT 等)
 - [x] 算術演算の `imm8` 最適化 (オペコード `83`)
 - [x] 条件分岐 (Jcc) の 8bit/32bit 選択とリロケーション生成
@@ -11,19 +11,19 @@
 - [x] パディング・シグネチャ自動付与 (Day 02/03ブートセクタ対応)
 - [x] 2パス構成によるラベル解決
 - [x] 自動テストパイプライン (ndisasm 比較)
-- [x] **COFF (WCOFF) 出力サポートの改善 (Day 06/09対応)**
+- [x] **COFF (WCOFF) 出力サポートの改善 (Day 06/09/15対応)**
     - リロケーションインデックスの正確な計算
     - 文字列テーブルの構築順序（定義順）の維持
     - セクション補助レコード（リロケーション数、Number=0）の付与
+    - リロケーションがない場合でもセクションヘッダにポインタを保持 (nask互換)
 
 ## 現在の進捗状況
-- **Day 01 〜 Day 06**: 完了（Harib03e までパス）
-- **Day 09**: 完了（Harib06c までパス）
+- **Day 01 〜 Day 15**: 完了（Harib12c までパス）
+- **Day 20 〜**: デグレおよび命令追加が必要
 
 ## 未実装 / 今後の課題 (Issue #12 より)
-- [ ] デグレの修正 (FAR ジャンプ等)
-- [ ] Day 12Suite Harib09a
-- [ ] Day 15Suite Harib12a/b/c
+- [ ] 32ビットモードにおける `PUSH [mem]` 等のバリアント追加 (Day 20以降で発生)
+- [ ] 命令サイズの微細な不一致の修正
 - [ ] Day 20Suite Harib17b/c/d/e/g/h
 - [ ] Day 21Suite Harib18d/e/g
 - [ ] Day 22Suite Harib19b/c
@@ -32,4 +32,5 @@
 ## マイルストーン
 1. **[DONE] Bootloader Excellence**: Day 01〜05 のブートローダー関連を完全にパス。
 2. **[DONE] C-Language Bridge**: Day 06 以降、C言語から呼ばれるアセンブラ関数の完全なアセンブル。
-3. **[ACTIVE] Advanced OS Features**: メモリ管理、割り込み処理、マルチタスクに必要な命令セットの網羅。
+3. **[DONE] Advanced OS Features (Part 1)**: Day 15 (Harib12c) までのメモリ管理・ウィンドウ表示関連の命令・出力をサポート。
+4. **[ACTIVE] Advanced OS Features (Part 2)**: マルチタスク、例外処理、高度なアプリ実行に必要な機能の完成。

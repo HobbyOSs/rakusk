@@ -38,8 +38,8 @@ method wrap-wcoff(%symbols, $output, $source_file_name, @global_symbols, @extern
     my $reloc_size = @relocations.elems * 10;
     my $symbol_table_offset = $reloc_table_offset + $reloc_size;
     
-    # リロケーションがある場合のみオフセットを有効にする
-    my $actual_reloc_offset = @relocations.elems > 0 ?? $reloc_table_offset !! 0;
+    # nask always provides the offset even if there are no relocations
+    my $actual_reloc_offset = $reloc_table_offset;
     
     # Symbols: .file, sections, then globals/externs
     my @syms;
