@@ -4,34 +4,55 @@ use Rakusk;
 
 use Rakusk::Log;
 
+my $VERSION = "2.0.0";
+
 #| rakusk: Raku-based x86 Assembler
 sub MAIN(
-    Str $file?,               #= 入力ファイルパス（指定がない場合は標準入力から読み込み）
-    Bool :v(:$verbose) = False,  #= デバッグログを表示
+    *@args,
+    Bool :v(:$version) = False,  #= バージョンとライセンス情報を表示する
+    Bool :d(:$debug) = False,    #= デバッグログを出力する
     Bool :i(:$show-info) = False #= 命令のサイズと情報を表示
 ) {
-    if $verbose {
+    if $version {
+        say "rakusk $VERSION";
+        print Q:to/EOF/;
+Copyright (C) 2026 Cline (Original: 2024 idiotpanzer@gmail.com)
+ライセンス GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>.
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+
+Thank you osask project !
+EOF
+        exit 0;
+    }
+
+    if @args.elems < 2 {
+        note "usage:  [--help | -v] source [object/binary] [list]";
+        exit 16;
+    }
+
+    my $assembly-src = @args[0];
+    my $assembly-dst = @args[1];
+
+    if $debug {
         set-level(DEBUG);
     }
 
     my $code;
 
-    if $file.defined && $file ne '-' {
-        if $file.IO.f {
-            $code = $file.IO.slurp;
-        } else {
-            note "Error: File '$file' not found.";
-            exit 1;
-        }
+    if $assembly-src.IO.f {
+        $code = $assembly-src.IO.slurp;
     } else {
-        # 標準入力から読み込み
-        $code = $*IN.slurp;
+        note "RAKUSK : can't open $assembly-src";
+        exit 17;
     }
 
     if $code.trim eq '' {
         note "No input code provided.";
         exit 1;
     }
+
+    say "source: $assembly-src, object: $assembly-dst";
 
     my $res = assemble($code);
     my $bin = $res.binary;
@@ -52,14 +73,14 @@ sub MAIN(
     }
 
     if match_success($bin) {
-        "boot.bin".IO.spurt($bin);
-        say "Successfully assembled to boot.bin";
-        say "Binary (Hex): " ~ $bin.list.map({ .fmt('%02X') }).join(' ');
+        $assembly-dst.IO.spurt($bin);
+        # say "Successfully assembled to $assembly-dst";
+        # say "Binary (Hex): " ~ $bin.list.map({ .fmt('%02X') }).join(' ');
         
         # 検証（ndisasmが利用可能な場合）
-        if shell("which ndisasm > /dev/null 2>&1").exitcode == 0 {
+        if $show-info && shell("which ndisasm > /dev/null 2>&1").exitcode == 0 {
             say "--- Disassembly Check ---";
-            shell "ndisasm -b16 boot.bin";
+            shell "ndisasm -b16 $assembly-dst";
         }
     } else {
         note "Assembly failed!";

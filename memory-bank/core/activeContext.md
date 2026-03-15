@@ -5,10 +5,12 @@
 - マウス、メモリ管理、割り込み処理に関連する命令セットの拡充。
 
 ## 直近のタスク
+- [x] CLI インターフェースを `gosk` 互換に刷新。
 - [x] Day 20 (`harib17b`) の不一致原因調査と主要な修正（PUSH [mem], リロケーションオフセット, 32bitアドレッシング）。
 - [x] `base.json` への `PUSH/POP [mem]` バリアント追加。
 
 ## 最近の変更点
+- `main.raku`: CLI インターフェースを `gosk` 互換（`source`, `object` 引数必須、エラーコード 16/17、バージョン表示 `-v`）に変更。
 - `data/instructions/base.json`: `PUSH/POP` のメモリバリアント追加、`PUSHFD/POPFD/IRETD` 等への `width` 指定追加。
 - `lib/Rakusk/Grammar.rakumod`: 現在の `bit_mode` に一致する `width` を持つバリアントを優先選択するよう改善。
 - `lib/Rakusk/Pass2/Instruction.rakumod`: 
