@@ -10,7 +10,7 @@ method encode-instruction($node, %regs, %env) {
     my $type = %info<type> // '';
 
     # 1. プレフィックスの取得
-    my $bin = self.get-prefixes($node, %info);
+    my $bin = self.get-prefixes($node, %info, %env);
 
     # 2. オコードの生成
     $bin ~= self.get-base-opcode($node, %info);
@@ -24,7 +24,7 @@ method encode-instruction($node, %regs, %env) {
     return $bin;
 }
 
-method get-prefixes($node, %info) {
+method get-prefixes($node, %info, %env) {
     my $bin = Buf.new();
     my @ops = $node.operands;
     
@@ -41,6 +41,21 @@ method get-prefixes($node, %info) {
     # 0x0F プレフィックス (一部の命令)
     if %info<type> eq 'sreg' && @ops.elems > 0 && @ops[0].name eq 'FS' | 'GS' {
         $bin.push(0x0F);
+    }
+
+    # 32bitモードでの PUSH/POP ES,CS,SS,DS は 1バイト (nask/i386)
+    # 16bitモードも 1バイト。
+    # 現在のロジックでは get-base-opcode で処理されるため、ここでは何もしない。
+
+    # PUSH imm16/imm32 で幅が 8ビットに収まる場合、
+    # nask は 66h prefix をつけない (PUSH imm8 形式を使用するため)
+    if ($node.mnemonic // '') eq 'PUSH' && %info<type> eq 'imm16' {
+        my $imm = @ops[0];
+        if $imm ~~ Immediate && $imm.expr.is-imm8(%env) {
+            # size-of-instruction 用のダミー環境では PC が不定だが
+            # is-imm8 は定数判定なので問題ないはず
+            return Buf.new();
+        }
     }
     
     return $bin;
@@ -113,11 +128,20 @@ method needs_67h($node) {
         if $op ~~ Memory {
             my $base = $op.base;
             my $index = $op.index;
-            my $is_32bit_addr = ($base && $base ~~ Register && $base.width == 32)
+            # 32bitレジスタが使われているか
+            my $has_32bit_reg = ($base && $base ~~ Register && $base.width == 32)
             || ($index && $index ~~ Register && $index.width == 32);
+            # 16bitレジスタが使われているか
+            my $has_16bit_reg = ($base && $base ~~ Register && $base.width == 16)
+            || ($index && $index ~~ Register && $index.width == 16);
             
-            return True if self.bit_mode == 16 && $is_32bit_addr;
-            return True if self.bit_mode == 32 && !$is_32bit_addr;
+            if self.bit_mode == 16 {
+                return True if $has_32bit_reg;
+            } else { # 32
+                # 32ビットモードでは16ビットレジスタが使われている場合に 67h が必要
+                return True if $has_16bit_reg;
+                # レジスタがない場合はデフォルトで32bitアドレッシングなので 67h 不要
+            }
         }
     }
     return False;
@@ -238,7 +262,7 @@ method encode-immediate($node, %info, %env) {
                 $bin ~= pack-le($val, 8);
             }
         }
-        when 'reg-imm16' | 'mem-imm16' | 'reg-reg-imm16' | 'short-imm' {
+        when 'reg-imm16' | 'mem-imm16' | 'imm16' | 'reg-reg-imm16' | 'short-imm' {
             my $imm_op = @ops.grep(Immediate)[0];
             my $val = self.eval-to-int($imm_op, %env);
             my $width = %info<width>;
@@ -279,10 +303,6 @@ method encode-immediate($node, %info, %env) {
                         my $sym_idx = 8;
                         # EXTERN, GLOBAL の順を正確に守る
                         my $found = False;
-                        # .file(2) + sections(3*2) = 8
-                        # syms に追加される順序を再現する必要がある:
-                        # 1. extern_symbols
-                        # 2. global_symbols
                         
                         # 重複を排除した順序
                         my @all_externs = self.extern_symbols.unique;
@@ -298,16 +318,16 @@ method encode-immediate($node, %info, %env) {
                                 $sym_idx++;
                             }
                         }
+                        my $prefix_count = self.get-prefixes($node, %info, %env).elems;
                         %env<relocations>.push({
-                            offset => %env<PC> + 1,
+                            offset => %env<PC> + $prefix_count + 1,
                             sym_idx => $sym_idx,
                             type => 20 # REL_I386_REL32
                         });
                     }
                     # EXTERN の場合は 0 をベースにする (gosk / nask に合わせる)
-                    # ただし nask (WCOFF) では、CALL EXTERN は e8 fd ff ff ff (-3) などの
-                    # 相対オフセットが書き込まれることがある（再配置対象のベース値）
-                    # 今回の expected では e8 00 00 00 00 (0) になっている可能性も考慮
+                    # nask (WCOFF) では、CALL EXTERN は相対オフセットが書き込まれることがあるが
+                    # とりあえず 0 で進める（以前の成功例に合わせる）
                     $bin ~= pack-le(0, $width);
                     return $bin;
                 }
@@ -341,9 +361,16 @@ method encode_mem_op($mem, %env) {
     my $base_reg = $mem.base ~~ Register ?? $mem.base !! Nil;
     my $index_reg = $mem.index ~~ Register ?? $mem.index !! Nil;
     
-    my $is_32bit_addr = ($base_reg && $base_reg.width == 32) || ($index_reg && $index_reg.width == 32);
+    # アドレッシングモードの決定
+    my $use_32bit;
+    if $base_reg || $index_reg {
+        $use_32bit = ($base_reg && $base_reg.width == 32) || ($index_reg && $index_reg.width == 32);
+    } else {
+        # レジスタがない場合は現在の bit_mode に従う
+        $use_32bit = self.bit_mode == 32;
+    }
     
-    if $is_32bit_addr {
+    if $use_32bit {
         return self.encode_mem_op_32($mem, %env);
     } else {
         return self.encode_mem_op_16($mem, %env);

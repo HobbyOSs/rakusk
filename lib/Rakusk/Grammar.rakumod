@@ -306,6 +306,16 @@ class AssemblerActions is export does Evaluator {
             return @variants[0];
         }
 
+        # 1. 現在の bit_mode に一致する width を持つバリアントを優先
+        for @variants -> $v {
+            if ($v<width> // 0) == $.bit_mode {
+                if self!match-variant($v, @ops) {
+                    return $v;
+                }
+            }
+        }
+
+        # 2. 一致するものがない場合は全体から検索（width未定義のものなど）
         for @variants -> $v {
             if self!match-variant($v, @ops) {
                 return $v;

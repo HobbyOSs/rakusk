@@ -32,9 +32,8 @@ method wrap-wcoff(%symbols, $output, $source_file_name, @global_symbols, @extern
     my $data_size = 0;
     my $bss_size = 0;
     
-    my $reloc_table_offset = 20 + 40 * $num_sections + $text_size + $data_size;
-    # 実際には relocation table offset はセクションごとに異なるが、
-    # ここでは .text だけにリロケーションがある前提（Day 09の構成）
+    # Relocation pointer points to the end of raw data
+    my $reloc_table_offset = 20 + 40 * $num_sections + $text_size;
     my $reloc_size = @relocations.elems * 10;
     my $symbol_table_offset = $reloc_table_offset + $reloc_size;
     
