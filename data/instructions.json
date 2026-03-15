@@ -1222,6 +1222,11 @@
       "opcode": "0F01",
       "extension": 2
     },
+    "LIDT": {
+      "type": "mem",
+      "opcode": "0F01",
+      "extension": 3
+    },
     "DB": {
       "type": "pseudo"
     },
