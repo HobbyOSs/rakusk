@@ -1,7 +1,7 @@
 {
   "name": "rakusk",
   "description": "Raku-based x86 assembler for self-hosting OS bootstrap",
-  "version": "0.0.1",
+  "version": "2.0.0",
   "perl": "6.d",
   "authors": [
     "Cline"
@@ -10,7 +10,18 @@
     "JSON::Fast"
   ],
   "provides": {
+    "Rakusk": "lib/Rakusk.rakumod",
+    "Rakusk::AST": "lib/Rakusk/AST.rakumod",
+    "Rakusk::Grammar": "lib/Rakusk/Grammar.rakumod",
+    "Rakusk::Log": "lib/Rakusk/Log.rakumod",
+    "Rakusk::Pass1": "lib/Rakusk/Pass1.rakumod",
+    "Rakusk::Pass2": "lib/Rakusk/Pass2.rakumod",
+    "Rakusk::Util": "lib/Rakusk/Util.rakumod"
   },
-  "resources": [],
+  "resources": [
+    "registers.json",
+    "instructions/base.json",
+    "instructions/pseudo.json"
+  ],
   "source-url": "git@github.com:HobbyOSs/rakusk.git"
 }
