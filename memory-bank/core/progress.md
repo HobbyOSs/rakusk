@@ -1,8 +1,10 @@
 # Progress - rakusk
 
-## 実装済み機能 (Day 01 - Day 09)
+## 実装済み機能 (Day 01 - Day 15+)
 - [x] 基本命令セット (MOV, ADD, SUB, CMP, JMP, CALL, RET, INT 等)
 - [x] 算術演算の `imm8` 最適化 (オペコード `83`)
+- [x] 条件分岐 (Jcc) の 8bit/32bit 選択とリロケーション生成
+- [x] 間接 FAR ジャンプ/コール (`JMP FAR [mem]`, `CALL FAR [mem]`)
 - [x] 16ビット/32ビット ModR/M エンコード
 - [x] セグメントレジスタ、コントロールレジスタ対応
 - [x] 疑似命令 (ORG, DB, DW, DD, RESB, ALIGNB, EQU, GLOBAL, EXTERN)

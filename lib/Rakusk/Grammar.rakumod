@@ -152,6 +152,7 @@ grammar Assembler is export {
 class AssemblerActions is export does Evaluator {
     has Int $.bit_mode is rw = 16;
     has %.symbols;
+    has %.externs;
 
     method TOP($/) {
         make $<statement>».made.grep(*.defined);
@@ -191,7 +192,9 @@ class AssemblerActions is export does Evaluator {
     }
 
     method extern_sym_stmt($/) {
-        make ExternSymStmt.new(symbols => $<ident>».Str);
+        my @names = $<ident>».Str;
+        %!externs{$_} = True for @names;
+        make ExternSymStmt.new(symbols => @names);
     }
 
     method config_stmt($/) {
@@ -412,6 +415,15 @@ class AssemblerActions is export does Evaluator {
                 return @ops[1].name eq 'CL';
             }
             when 'short-jump' | 'near-jump' | 'imm8' {
+                # EXTERN シンボルの場合は、リロケーションが必要なため near-jump を選択させる。
+                # それ以外の内部ラベル（前方参照含む）は、一旦 short-jump を許可して nask の挙動に合わせる。
+                if $type eq 'short-jump' {
+                    my $op = @ops[0];
+                    if $op ~~ Immediate && $op.expr.factor ~~ IdentFactor {
+                        my $name = $op.expr.factor.value;
+                        return False if %!externs{$name};
+                    }
+                }
                 return @ops.elems == 1 && @ops[0] ~~ Immediate;
             }
             when 'imm8-short' {
@@ -420,6 +432,9 @@ class AssemblerActions is export does Evaluator {
             }
             when 'far-jump' {
                 return @ops.elems == 1 && @ops[0] ~~ SegmentedAddress;
+            }
+            when 'mem-far' {
+                return @ops.elems == 1 && @ops[0] ~~ Memory && (@ops[0].size_prefix // '') eq 'FAR';
             }
             when 'mem' {
                 return @ops.elems == 1 && @ops[0] ~~ Memory;

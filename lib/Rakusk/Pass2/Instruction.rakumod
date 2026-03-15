@@ -196,7 +196,7 @@ method encode-modrm-sib-disp($node, %info, %env) {
             $bin ~= $disp_bytes if $disp_bytes;
             return $bin;
         }
-        when 'mem-imm8' | 'mem-imm16' | 'mem' {
+        when 'mem-imm8' | 'mem-imm16' | 'mem' | 'mem-far' {
             my $mem_op = @ops.grep(Memory)[0];
             my ($mod, $rm, $disp_bytes, $sib, $needs_67) = self.encode_mem_op($mem_op, %env);
             my $reg_field = %info<extension> // 0;
