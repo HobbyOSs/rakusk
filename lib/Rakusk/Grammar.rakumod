@@ -238,8 +238,6 @@ class AssemblerActions is export does Evaluator {
         # 1. JMP/CALL の絶対アドレス指定に対する near-jump 優先
         if $m eq 'JMP' | 'CALL' && @ops.elems == 1 && @ops[0] ~~ Immediate {
             my $ev = @ops[0].expr.eval({});
-            # eval({}) for labels now returns the ImmExp object itself (self), not a NumberExp.
-            # So this check only passes for numeric literals or symbols defined with EQU.
             if $ev ~~ NumberExp {
                 my $near = @variants.grep({ ($_<type> // '') eq 'near-jump' })[0];
                 return InstructionNode.new(mnemonic => $m, operands => @ops, info => $near) if $near;
@@ -248,30 +246,50 @@ class AssemblerActions is export does Evaluator {
 
         # 2. 算術演算での imm8 最適化 (83 /x ib 形式の優先)
         if $m ~~ /^(ADD|SUB|CMP|AND|OR|XOR|ADC|SBB)$/ && @ops.elems == 2 && @ops[1] ~~ Immediate && (@ops[0] ~~ Register | Memory) {
-            my $ev = @ops[1].expr.eval(%env);
-            if $ev ~~ NumberExp && $ev.value.abs <= 127 {
-                my @matches = @variants.grep({
-                        (($_<type> // '') ~~ 'short-imm' | 'reg-imm8')
-                        && ($_<width> // 0) == @ops[0].width
-                        && (!$_<short_reg> || $_<short_reg>.uc eq @ops[0].name.uc)
-                });
-                 
-                my $best;
-                my $width = @ops[0] ~~ Register ?? @ops[0].width !! (self.bit_mode == 16 ?? 16 !! 32);
-                if @ops[0] ~~ Memory && @ops[0].size_prefix {
-                    $width = 8 if @ops[0].size_prefix eq 'BYTE';
-                    $width = 16 if @ops[0].size_prefix eq 'WORD';
-                    $width = 32 if @ops[0].size_prefix eq 'DWORD';
+            if @ops[1].expr.is-imm8(%env) {
+                my $op_width = 0;
+                if @ops[0] ~~ Register {
+                    $op_width = @ops[0].width;
+                } elsif @ops[0] ~~ Memory {
+                    if @ops[0].size_prefix {
+                        $op_width = 8 if @ops[0].size_prefix eq 'BYTE';
+                        $op_width = 16 if @ops[0].size_prefix eq 'WORD';
+                        $op_width = 32 if @ops[0].size_prefix eq 'DWORD';
+                    } else {
+                        $op_width = (self.bit_mode == 16 ?? 16 !! 32);
+                    }
                 }
 
-                if $width == 8 {
-                    $best = @matches.grep({ ($_<type> // '') eq 'short-imm' })[0] // @matches[0];
-                } elsif $width == 16 {
-                    $best = @matches.grep({ ($_<type> // '') eq 'short-imm' })[0] // @matches[0];
-                } else { # 32-bit
-                    $best = @matches.grep({ ($_<type> // '') ~~ 'reg-imm8' | 'mem-imm8' })[0] // @matches[0];
+                # width 8 instructions don't use '83' optimization
+                if $op_width != 8 {
+                    # nask's behavior: Only use 83 optimization if it actually saves space.
+                    # For 'ADD AX, imm16' (16-bit reg-imm), both '05' (3 bytes) and '83' (3 bytes) exist.
+                    # nask prefers the standard '05' for AX.
+                    my $is_ax_16 = @ops[0] ~~ Register && @ops[0].name eq 'AX' && $op_width == 16;
+                    my $is_eax_32 = @ops[0] ~~ Register && @ops[0].name eq 'EAX' && $op_width == 32;
+
+                    my $best = @variants.grep({ ($_<opcode> // '') eq '83' && ($_<width> // 0) == $op_width })[0];
+                    if $best && !$is_ax_16 {
+                        my %info = %$best;
+                        %info<width> //= $op_width;
+                        my $ext = Nil;
+                        if $m eq 'ADD' { $ext = 0 }
+                        elsif $m eq 'OR' { $ext = 1 }
+                        elsif $m eq 'ADC' { $ext = 2 }
+                        elsif $m eq 'SBB' { $ext = 3 }
+                        elsif $m eq 'AND' { $ext = 4 }
+                        elsif $m eq 'SUB' { $ext = 5 }
+                        elsif $m eq 'XOR' { $ext = 6 }
+                        elsif $m eq 'CMP' { $ext = 7 }
+                        %info<extension> //= $ext;
+                        if @ops[0] ~~ Register {
+                            %info<type> = 'reg-imm8';
+                        } else {
+                            %info<type> = 'mem-imm8';
+                        }
+                        return InstructionNode.new(mnemonic => $m, operands => @ops, info => %info) if %info<extension>.defined;
+                    }
                 }
-                return InstructionNode.new(mnemonic => $m, operands => @ops, info => $best) if $best;
             }
         }
         return Nil;

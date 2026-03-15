@@ -63,7 +63,7 @@ method wrap-wcoff(%symbols, $output, $source_file_name, @global_symbols, @extern
                  ~ pack-le($num_relocs, 16) 
                  ~ pack-le(0, 16) # NumberOfLinenumbers
                  ~ pack-le(0, 32) # Checksum
-                 ~ pack-le($i, 16) # Section number (1-based)
+                 ~ pack-le(0, 16) # nask sets this to 0
                  ~ pack-le(0, 8)  # Selection
                  ~ Buf.new(0 xx 3) # Unused
         });

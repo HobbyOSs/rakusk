@@ -182,7 +182,8 @@ method encode-modrm-sib-disp($node, %info, %env) {
         when 'reg' | 'reg-imm8' | 'reg-imm16' {
             return Buf.new() if %info<base_opcode>;
             my $reg_field = %info<extension> // @ops[0].index;
-            my $modrm = pack-modrm(mod => 3, reg => $reg_field, rm => @ops[0].index);
+            my $rm_field = @ops[0].index;
+            my $modrm = pack-modrm(mod => 3, reg => $reg_field // 0, rm => $rm_field // 0);
             return Buf.new($modrm);
         }
         when 'reg-mem' | 'mem-reg' {
@@ -198,7 +199,9 @@ method encode-modrm-sib-disp($node, %info, %env) {
         when 'mem-imm8' | 'mem-imm16' | 'mem' {
             my $mem_op = @ops.grep(Memory)[0];
             my ($mod, $rm, $disp_bytes, $sib, $needs_67) = self.encode_mem_op($mem_op, %env);
-            my $modrm = pack-modrm(mod => $mod, reg => (%info<extension> // 0), rm => $rm);
+            my $reg_field = %info<extension> // 0;
+            # debug "DEBUG: mod=$mod reg=$reg_field rm=$rm" if %*ENV<RAKUSK_DEBUG>;
+            my $modrm = pack-modrm(mod => $mod // 0, reg => $reg_field, rm => $rm // 0);
             my $bin = Buf.new($modrm);
             $bin ~= $sib if $sib;
             $bin ~= $disp_bytes if $disp_bytes;

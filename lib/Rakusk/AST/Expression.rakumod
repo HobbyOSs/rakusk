@@ -7,6 +7,16 @@ unit module Rakusk::AST::Expression;
 role Expression is export {
     method eval(%env) { ... }
     method value() { ... }
+    method is-imm8(%env) {
+        my $res = self.eval(%env);
+        if $res.^name eq 'Rakusk::AST::Expression::NumberExp' {
+            my $val = $res.value;
+            # Handle 32-bit values that represent negative numbers (sign-extension)
+            my $val_32 = ($val >= 0x80000000 && $val <= 0xFFFFFFFF) ?? ($val - 0x100000000) !! $val;
+            return $val_32 >= -128 && $val_32 <= 127;
+        }
+        return False;
+    }
 }
 
 class NumberExp does Expression is export {

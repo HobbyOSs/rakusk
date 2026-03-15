@@ -78,15 +78,10 @@ method process-JMP($node, %regs, %env) {
 }
 
 method estimate-jump-size($mnemonic, $bit_mode) {
-    if $bit_mode == 16 {
-        if $mnemonic eq 'CALL' {
-            return 3;
-        }
-        return 2;
+    # 32bit mode でも条件分岐はまず 2 byte (short jump) と仮定してみる
+    # これによりラベル位置が nask と一致しやすくなる
+    if $mnemonic eq 'CALL' {
+        return $bit_mode == 16 ?? 3 !! 5;
     }
-    
-    if $mnemonic eq 'JMP' || $mnemonic eq 'CALL' {
-        return 5;
-    }
-    return 6;
+    return 2;
 }
