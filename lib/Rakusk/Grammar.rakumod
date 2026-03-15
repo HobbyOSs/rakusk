@@ -436,8 +436,25 @@ class AssemblerActions is export does Evaluator {
             when 'no-op' {
                 return @ops.elems == 0;
             }
+            when 'reg' {
+                return False unless @ops.elems == 1 && @ops[0] ~~ Register;
+                return False if $v_width && @ops[0].width != $v_width;
+                return True;
+            }
+            when 'in-out-reg' {
+                return False unless @ops.elems == 2;
+                my ($r1, $r2);
+                if $v<mnemonic> eq 'IN' {
+                    ($r1, $r2) = @ops;
+                } else { # OUT
+                    ($r2, $r1) = @ops;
+                }
+                return False unless $r1 ~~ Register && $r2 ~~ Register;
+                return False if $v_width && $r1.width != $v_width;
+                return $r2.name eq 'DX' && ($r1.name eq 'AL' | 'AX' | 'EAX');
+            }
+            return False;
         }
-        return False;
     }
 
     method operand_list($/) { make $<operand>».made; }

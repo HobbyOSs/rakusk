@@ -232,17 +232,49 @@
       "type": "no-op",
       "opcode": "61"
     },
+    "POPFD": {
+      "type": "no-op",
+      "opcode": "9D"
+    },
     "POPF": {
       "type": "no-op",
       "opcode": "9D"
+    },
+    "POP_REG16": {
+      "mnemonic": "POP",
+      "type": "reg",
+      "base_opcode": "58",
+      "width": 16
+    },
+    "POP_REG32": {
+      "mnemonic": "POP",
+      "type": "reg",
+      "base_opcode": "58",
+      "width": 32
     },
     "PUSHA": {
       "type": "no-op",
       "opcode": "60"
     },
+    "PUSHFD": {
+      "type": "no-op",
+      "opcode": "9C"
+    },
     "PUSHF": {
       "type": "no-op",
       "opcode": "9C"
+    },
+    "PUSH_REG16": {
+      "mnemonic": "PUSH",
+      "type": "reg",
+      "base_opcode": "50",
+      "width": 16
+    },
+    "PUSH_REG32": {
+      "mnemonic": "PUSH",
+      "type": "reg",
+      "base_opcode": "50",
+      "width": 32
     },
     "RDMSR": {
       "type": "no-op",
@@ -1137,15 +1169,21 @@
     },
     "IN_AL_DX": {
       "mnemonic": "IN",
-      "type": "no-op",
+      "type": "in-out-reg",
       "opcode": "EC",
       "width": 8
     },
     "IN_AX_DX": {
       "mnemonic": "IN",
-      "type": "no-op",
+      "type": "in-out-reg",
       "opcode": "ED",
       "width": 16
+    },
+    "IN_EAX_DX": {
+      "mnemonic": "IN",
+      "type": "in-out-reg",
+      "opcode": "ED",
+      "width": 32
     },
     "OUT_IMM8_AL": {
       "mnemonic": "OUT",
@@ -1163,15 +1201,21 @@
     },
     "OUT_DX_AL": {
       "mnemonic": "OUT",
-      "type": "no-op",
+      "type": "in-out-reg",
       "opcode": "EE",
       "width": 8
     },
     "OUT_DX_AX": {
       "mnemonic": "OUT",
-      "type": "no-op",
+      "type": "in-out-reg",
       "opcode": "EF",
       "width": 16
+    },
+    "OUT_DX_EAX": {
+      "mnemonic": "OUT",
+      "type": "in-out-reg",
+      "opcode": "EF",
+      "width": 32
     },
     "LGDT": {
       "type": "mem",

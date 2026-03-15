@@ -50,14 +50,13 @@ method needs_66h($node, %info) {
 
     # IN/OUT の特殊ルール
     if $mnemonic ~~ 'IN' | 'OUT' {
-        # gosk/pkg/asmdb/instruction_search.go: getPrefix66SizeForInOut
         # ポート指定が DX で、データレジスタが 16/32bit の場合に 0x66 が必要
-        my $reg = @ops.grep(Register)[0];
-        return False unless $reg;
+        my $data_reg = ($mnemonic eq 'IN' ?? @ops[0] !! @ops[1]);
+        return False unless $data_reg ~~ Register;
         if self.bit_mode == 16 {
-            return $reg.width == 32;
+            return $data_reg.width == 32;
         } else { # 32-bit mode
-            return $reg.width == 16;
+            return $data_reg.width == 16;
         }
     }
 
@@ -118,7 +117,7 @@ method get-base-opcode($node, %info) {
     my $type = %info<type> // '';
     my $mnemonic = $node.mnemonic;
     
-    if $type ~~ 'reg-imm8' | 'reg-imm16' && %info<base_opcode> {
+    if $type ~~ 'reg' | 'reg-imm8' | 'reg-imm16' && %info<base_opcode> {
         my $reg_op = $node.operands[0];
         my $opcode = %info<base_opcode>.parse-base(16) + $reg_op.index;
         return Buf.new($opcode);
@@ -154,7 +153,7 @@ method encode-modrm-sib-disp($node, %info, %env) {
             my $modrm = pack-modrm(mod => 3, reg => @ops[1].index, rm => @ops[0].index);
             return Buf.new($modrm);
         }
-        when 'reg-imm8' | 'reg-imm16' {
+        when 'reg' | 'reg-imm8' | 'reg-imm16' {
             return Buf.new() if %info<base_opcode>;
             my $reg_field = %info<extension> // @ops[0].index;
             my $modrm = pack-modrm(mod => 3, reg => $reg_field, rm => @ops[0].index);
