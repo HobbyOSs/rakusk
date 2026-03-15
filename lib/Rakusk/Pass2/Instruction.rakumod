@@ -49,7 +49,7 @@ method get-prefixes($node, %info, %env) {
 
     # PUSH imm16/imm32 で幅が 8ビットに収まる場合、
     # nask は 66h prefix をつけない (PUSH imm8 形式を使用するため)
-    if ($node.mnemonic // '') eq 'PUSH' && %info<type> eq 'imm16' {
+    if ($node.mnemonic // '') eq 'PUSH' && (%info<type> // '') eq 'imm16' {
         my $imm = @ops[0];
         if $imm ~~ Immediate && $imm.expr.is-imm8(%env) {
             # size-of-instruction 用のダミー環境では PC が不定だが
@@ -149,7 +149,7 @@ method needs_67h($node) {
 
 method get-base-opcode($node, %info) {
     my $type = %info<type> // '';
-    my $mnemonic = $node.mnemonic;
+    my $mnemonic = $node.mnemonic // '';
     
     if $type ~~ 'reg' | 'reg-imm8' | 'reg-imm16' && %info<base_opcode> {
         my $reg_op = $node.operands[0];

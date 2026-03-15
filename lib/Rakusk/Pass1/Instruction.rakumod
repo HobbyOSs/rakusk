@@ -22,7 +22,13 @@ method process-instruction($node, %regs, %env) {
         if ($node.info<type> // '') eq 'no-op' {
             $size = 1;
         } else {
-            $size = 2;
+            # type が reg, sreg などの1バイト命令である可能性を考慮
+            my $type = $node.info<type> // '';
+            if $type eq 'reg' || $type eq 'sreg' {
+                $size = 1;
+            } else {
+                $size = 2;
+            }
         }
     }
     self.pc += $size;
