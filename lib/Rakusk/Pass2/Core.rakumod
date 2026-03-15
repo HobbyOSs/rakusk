@@ -4,13 +4,18 @@ use Rakusk::Util;
 use Rakusk::Pass2::Instruction;
 use Rakusk::Pass2::Pseudo;
 use Rakusk::Pass2::Statement;
+use Rakusk::FileFmt::COFF;
 use Rakusk::Log;
 
-unit class Rakusk::Pass2::Core does Rakusk::Pass2::Instruction does Rakusk::Pass2::Pseudo does Rakusk::Pass2::Statement;
+unit class Rakusk::Pass2::Core does Rakusk::Pass2::Instruction does Rakusk::Pass2::Pseudo does Rakusk::Pass2::Statement does Rakusk::FileFmt::COFF;
 
 has @.ast;
 has Buf $.output is rw = Buf.new();
 has Int $.bit_mode is rw = 16;
+has Str $.output_format is rw = "binary";
+has Str $.source_file_name is rw = "";
+has @.global_symbols = [];
+has @.extern_symbols = [];
 has @.listing;
 
 method assemble(%regs, %symbols = {}) {
@@ -52,6 +57,12 @@ method assemble(%regs, %symbols = {}) {
             @!listing.push({ :$node, :$pc });
         }
     }
+
+    if $!output_format.uc eq 'WCOFF' {
+        my $bin = self.wrap-wcoff(%symbols, $!output, $!source_file_name, @!global_symbols, @!extern_symbols);
+        return { output => $bin, :@!listing };
+    }
+
     return { :$!output, :@!listing };
 }
 

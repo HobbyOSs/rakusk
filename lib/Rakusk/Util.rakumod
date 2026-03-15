@@ -41,6 +41,13 @@ role Evaluator is export {
         return 0;
     }
 
+    method eval-to-str($op, %env) {
+        my $res = self.eval-to-any($op, %env);
+        return $res if $res ~~ Str;
+        return $res.Str if $res.defined;
+        return "";
+    }
+
     method eval-to-any($op, %env) {
         if $op ~~ Immediate {
             my $res = $op.expr.eval(%env);

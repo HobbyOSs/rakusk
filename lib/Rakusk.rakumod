@@ -32,7 +32,14 @@ our sub assemble(Str $source) is export {
     my $pass1 = Pass1.new(:$bit_mode).evaluate(@ast, %regs);
 
     # 4. Pass 2 (バイナリ生成)
-    my $pass2 = Pass2.new(ast => $pass1.ast, :$bit_mode);
+    my $pass2 = Pass2.new(
+        ast => $pass1.ast,
+        bit_mode => $pass1.bit_mode,
+        output_format => $pass1.output_format,
+        source_file_name => $pass1.source_file_name,
+        global_symbols => $pass1.global_symbols,
+        extern_symbols => $pass1.extern_symbols,
+    );
     my $res = $pass2.assemble(%regs, $pass1.symbols);
     
     return AssembledResult.new(

@@ -72,8 +72,9 @@ grammar Assembler is export {
             | <config_stmt>
             | <mnemonic_stmt>
             | <opcode_stmt>
+            | <.comment> # Allow comments on their own
         ]
-        [ \n | $ ]
+        <.ws> [ \n | $ ]
     }
 
     # 基本要素
@@ -130,7 +131,7 @@ grammar Assembler is export {
         | <hex_lit>
         | <num_lit>
         | <string_lit>
-        | <ident>
+        | '.'? <ident>
         | '$'
     }
 
@@ -529,6 +530,8 @@ class AssemblerActions is export does Evaluator {
                 }
             } elsif $<ident> {
                 $f = IdentFactor.new(value => $<ident>.Str);
+            } elsif $/.Str ~~ /^ '.' <ident> $/ {
+                $f = IdentFactor.new(value => $/.Str);
             } elsif $/.Str eq '$' {
                 $f = IdentFactor.new(value => '$');
             }
