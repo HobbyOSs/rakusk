@@ -1,0 +1,14 @@
+{
+  "DB": { "type": "pseudo" },
+  "DW": { "type": "pseudo" },
+  "DD": { "type": "pseudo" },
+  "RESB": { "type": "pseudo" },
+  "ALIGNB": { "type": "pseudo" },
+  "ORG": { "type": "pseudo" },
+  "INSTRSET": { "type": "pseudo" },
+  "BITS": { "type": "pseudo" },
+  "FORMAT": { "type": "pseudo" },
+  "FILE": { "type": "pseudo" },
+  "GLOBAL": { "type": "pseudo" },
+  "SECTION": { "type": "pseudo" }
+}

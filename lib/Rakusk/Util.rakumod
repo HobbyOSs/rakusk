@@ -4,12 +4,19 @@ use Rakusk::AST;
 
 unit module Rakusk::Util;
 
-our $DEFAULT_INST_PATH = "data/instructions.json";
+our $REGS_PATH = "data/registers.json";
+our $INST_DIR  = "data/instructions";
 
 # データ読み込み用のキャッシュ
-my $data = from-json($DEFAULT_INST_PATH.IO.slurp);
-our %REGS_DATA is export = $data<registers>;
-our %INST_DATA is export = $data<instructions>;
+our %REGS_DATA is export = from-json($REGS_PATH.IO.slurp);
+our %INST_DATA is export;
+
+for dir($INST_DIR).grep(*.extension eq 'json') -> $file {
+    my %sub-data = from-json($file.IO.slurp);
+    for %sub-data.kv -> $key, $val {
+        %INST_DATA{$key} = $val;
+    }
+}
 
 # ModR/Mバイトを組み立てる関数
 # [ Mod (2bit) | Reg/Opcode (3bit) | R/M (3bit) ]
