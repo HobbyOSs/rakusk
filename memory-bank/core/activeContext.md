@@ -10,6 +10,7 @@
 - [x] `base.json` への `PUSH/POP [mem]` バリアント追加。
 
 ## 最近の変更点
+- **CIエラー修正**: `%?RESOURCES` 読み込み時の `Slip` エラーを修正し、リソースディレクトリを `data/` から `resources/` へ標準化。
 - `main.raku`: CLI インターフェースを `gosk` 互換（`source`, `object` 引数必須、エラーコード 16/17、バージョン表示 `-v`）に変更。
 - `data/instructions/base.json`: `PUSH/POP` のメモリバリアント追加、`PUSHFD/POPFD/IRETD` 等への `width` 指定追加。
 - `lib/Rakusk/Grammar.rakumod`: 現在の `bit_mode` に一致する `width` を持つバリアントを優先選択するよう改善。

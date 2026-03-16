@@ -5,9 +5,7 @@ use Rakusk::Pass1;
 use Rakusk::Pass2;
 use JSON::Fast;
 use Rakusk::Log;
-
-our $REG_DATA_PATH = "data/registers.json";
-our $INST_DIR = "data/instructions";
+use Rakusk::Util;
 
 class AssembledResult is export {
     has Buf $.binary;
@@ -17,7 +15,7 @@ class AssembledResult is export {
 
 our sub assemble(Str $source) is export {
     # 1. データの読み込み
-    my %regs = from-json($REG_DATA_PATH.IO.slurp);
+    my %regs = %Rakusk::Util::REGS_DATA;
 
     # 2. Parse (AST構築)
     my $actions = AssemblerActions.new();

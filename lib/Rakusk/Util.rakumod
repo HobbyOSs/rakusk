@@ -12,30 +12,39 @@ our %INST_DATA is export;
 sub init-data() {
     return if %REGS_DATA.elems > 0;
 
+
+
     my $regs-content;
     my @inst-contents;
 
-    # 1. %?RESOURCES からの読み込みを試行（パッケージ化時）
-    if %?RESOURCES{"registers.json"}.defined {
-        $regs-content = %?RESOURCES{"registers.json"}.slurp;
-        # 命令セットディレクトリ内のファイルを列挙
-        # Note: %?RESOURCES の列挙は実装に依存するため、既知のファイル名を指定
-        for <base.json pseudo.json> -> $file {
-            if %?RESOURCES{"instructions/$file"}.defined {
-                @inst-contents.push(%?RESOURCES{"instructions/$file"}.slurp);
+    # 1. 外部ファイルからの読み込み（開発時）を優先
+    my $regs-path = "resources/registers.json".IO;
+    if $regs-path.f {
+        $regs-content = $regs-path.slurp;
+
+        my $inst-dir = "resources/instructions".IO;
+        if $inst-dir.d {
+            for dir($inst-dir).grep(*.extension eq 'json') -> $file {
+                @inst-contents.push($file.slurp);
             }
         }
     }
 
-    # 2. 外部ファイルからの読み込み（開発時）
+    # 2. %?RESOURCES からの読み込みを試行（パッケージ化時）
     if !$regs-content.defined {
-        my $regs-path = "data/registers.json".IO;
-        $regs-content = $regs-path.slurp if $regs-path.f;
-
-        my $inst-dir = "data/instructions".IO;
-        if $inst-dir.d {
-            for dir($inst-dir).grep(*.extension eq 'json') -> $file {
-                @inst-contents.push($file.slurp);
+        my $res = %?RESOURCES<registers.json>;
+        if $res.defined {
+            # Slip (複数マッチ) の場合は最初のものを取得
+            my $target = $res ~~ Slip ?? $res[0] !! $res;
+            if $target.defined {
+                $regs-content = $target.slurp;
+                for <base.json pseudo.json> -> $file {
+                    my $i-res = %?RESOURCES{"instructions/$file"};
+                    if $i-res.defined {
+                        my $i-target = $i-res ~~ Slip ?? $i-res[0] !! $i-res;
+                        @inst-contents.push($i-target.slurp) if $i-target.defined;
+                    }
+                }
             }
         }
     }

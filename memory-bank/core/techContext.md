@@ -4,8 +4,9 @@
 ```
 .
 ├── main.raku           # CLI エントリーポイント (ファイル・標準入力対応)
-├── data/
-│   └── instructions.json # 命令定義データ
+├── resources/          # リソースファイル（旧 data/）
+│   ├── registers.json
+│   └── instructions/    # 命令定義データ
 ├── lib/
 │   ├── Rakusk.rakumod  # メインモジュール
 │   └── Rakusk/         # サブモジュール群
