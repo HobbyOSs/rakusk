@@ -1,6 +1,7 @@
 # Progress - rakusk
 
 ## 実装済み機能 (Day 01 - Day 15)
+- [x] NASM互換のドット `.` 付き識別子、およびアンダースコア `_` 付きシンボル対応
 - [x] 基本命令セット (MOV, ADD, SUB, CMP, JMP, CALL, RET, INT 等)
 - [x] 算術演算の `imm8` 最適化 (オペコード `83`)
 - [x] 条件分岐 (Jcc) の 8bit/32bit 選択とリロケーション生成

@@ -10,24 +10,19 @@
 - [x] `base.json` への `PUSH/POP [mem]` バリアント追加。
 
 ## 最近の変更点
-- **CIエラー修正**: `%?RESOURCES` 読み込み時の `Slip` エラーを修正し、リソースディレクトリを `data/` から `resources/` へ標準化。
-- `main.raku`: CLI インターフェースを `gosk` 互換（`source`, `object` 引数必須、エラーコード 16/17、バージョン表示 `-v`）に変更。
-- `data/instructions/base.json`: `PUSH/POP` のメモリバリアント追加、`PUSHFD/POPFD/IRETD` 等への `width` 指定追加。
-- `lib/Rakusk/Grammar.rakumod`: 現在の `bit_mode` に一致する `width` を持つバリアントを優先選択するよう改善。
-- `lib/Rakusk/Pass2/Instruction.rakumod`: 
-    - 32ビットモードでの `[disp32]`（レジスタなし）アドレッシングをデフォルト化。
-    - `needs_67h` の判定ロジック修正（32bitモードでの16bitレジスタ使用時のみ付加）。
-    - リロケーションオフセット計算に命令プレフィックス長を加算。
-    - `mem-far` 型での `extension` 指定を ModR/M に反映。
-- `lib/Rakusk/Pass1/Instruction.rakumod`: `reg/sreg` 型のサイズ推定精度を向上（1バイトとしてカウント）。
-- `lib/Rakusk/FileFmt/COFF.rakumod`: リロケーションテーブルポインタを raw data 直後に配置。
+- **GrammarとActionsの物理分離**: `lib/Rakusk/Grammar.rakumod` と `lib/Rakusk/Actions.rakumod` にコードを分離。
+- **NASM互換のドット `.` 付き識別子への対応**: `ident` トークンを拡張し、ドットを含む識別子をパース可能にした。
+- **文法ルールの堅牢化**: 
+    - `EQU` などの予約語が命令ニーモニックとして誤認される問題を `ident_not_reserved` 等の導入により解決。
+    - `statement` ルールに `||` (First Match) を導入し、ラベル定義を最優先でマッチさせるよう改善。
+    - 物理分離後の `%MNEMONIC_MAP` 初期化タイミングを修正。
+- **テストの有効化**: `t/dot_label.t` の skip を解除し、全てのテストケースがパスすることを確認。
 
 ## 課題と次のステップ
-- **ドット開始ラベルのパース問題**: `.from_app:` のようなドットで始まるラベルの解析に失敗する。Grammarの `ident` 定義や空白処理の見直しが必要。
+- `t/day03_harib00i.t` 等で発生している残りの Syntax error の解消。
 - `day20_harib17b.t` でのシンボルアドレスの微細なズレ（2バイト）の解消。
 - 一部のテストで見られる数バイトのサイズ不一致（ジャンプ命令の最適化の差異など）を精査する。
 - `day21` 以降の構文エラー（セグメントプレフィックス等）への対応。
-- 現在、Day 20以降のテストおよび `t/dot_label.t` は、これらの問題が未解決のため `skip-all` 設定となっている。
 
 ## 得られた知識
 - **COFF (WCOFF) の詳細挙動**:

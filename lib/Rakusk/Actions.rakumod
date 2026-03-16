@@ -54,18 +54,23 @@ class AssemblerActions is export does Rakusk::Util::Evaluator {
     }
 
     method statement($/) {
-        if $<label_stmt> {
-            my $label = $<label_stmt>.made;
-            if $<mnemonic_stmt> {
-                make [$label, $<mnemonic_stmt>.made];
-            } elsif $<opcode_stmt> {
-                make [$label, $<opcode_stmt>.made];
-            } else {
-                make $label;
-            }
+        my $label = $<label_stmt> ?? $<label_stmt>.made !! Nil;
+        my $inst = $<instruction_or_directive> ?? $<instruction_or_directive>.made !! Nil;
+
+        if $label && $inst {
+            make [$label, $inst];
+        } elsif $label {
+            make $label;
+        } elsif $inst {
+            make $inst;
         } else {
-            make $/.values[0].made;
+            # Comment or empty (should not happen if grammar is correct)
+            make Nil;
         }
+    }
+
+    method instruction_or_directive($/) {
+        make $/.values[0].made;
     }
 
     method label_stmt($/) {
@@ -73,7 +78,7 @@ class AssemblerActions is export does Rakusk::Util::Evaluator {
     }
 
     method declare_stmt($/) {
-        my $name = $<ident>.Str;
+        my $name = ($<ident> // $<ident_not_reserved>).Str;
         my $val_expr = $<exp>.made;
         my $node = DeclareStmt.new(name => $name, value => $val_expr);
         my $val = self.eval-to-any($val_expr, { symbols => %!symbols });
@@ -470,10 +475,8 @@ class AssemblerActions is export does Rakusk::Util::Evaluator {
                 } else {
                     $f = StringFactor.new(value => $s);
                 }
-            } elsif $<ident> {
-                $f = IdentFactor.new(value => $<ident>.Str);
-            } elsif $/.Str ~~ /^ '.' $<ident> $/ {
-                $f = IdentFactor.new(value => $/.Str);
+            } elsif ($<ident> // $<ident_not_reserved>) -> $id {
+                $f = IdentFactor.new(value => $id.Str);
             } elsif $/.Str eq '$' {
                 $f = IdentFactor.new(value => '$');
             }

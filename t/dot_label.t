@@ -2,7 +2,7 @@ use v6;
 use Test;
 use Rakusk::Grammar;
 
-plan :skip-all("Grammar not yet supporting dot-started labels correctly");
+plan *;
 
 subtest "dot-started labels" => {
     my @test-cases = (
