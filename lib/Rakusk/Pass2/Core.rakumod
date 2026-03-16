@@ -27,6 +27,12 @@ method assemble(%regs, %symbols = {}) {
     $!output = Buf.new();
     @!listing = [];
     for @!ast -> $node {
+        if $node ~~ ConfigStmt && $node.type eq 'ORG' {
+            my $val = $node.value;
+            $pc = self.eval-to-int($val, { symbols => %symbols, PC => $pc });
+            @!listing.push({ :$node, :$pc, :type<config> });
+            next;
+        }
         if $node ~~ PseudoNode && $node.mnemonic eq 'ORG' {
             my $val = $node.operands[0];
             $pc = self.eval-to-int($val, { symbols => %symbols, PC => $pc });

@@ -27,6 +27,8 @@ method process-statement($node, %regs, %env) {
         } elsif $node.type eq 'SECTION' {
             self.current_section = self.eval-to-str($node.value, %env);
             self.sections.push(self.current_section) unless self.current_section (elem) self.sections;
+        } elsif $node.type eq 'ORG' {
+            self.pc = self.eval-to-int($node.value, %env);
         }
         return;
     }

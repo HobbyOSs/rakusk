@@ -78,9 +78,14 @@ grammar Assembler is export {
         || <export_sym_stmt>
         || <extern_sym_stmt>
         || <config_stmt>
+        || <org_stmt>
+        || <db_stmt>
         || <mnemonic_stmt>
         || <opcode_stmt>
     }
+
+    rule org_stmt { :i 'ORG' <exp> }
+    rule db_stmt { :i [ 'DB' | 'DW' | 'DD' | 'RESB' ] <operand_list> }
 
     # 基本要素
     token ident { <[a..zA..Z$_.]> <[a..zA..Z$_0..9.]>* }
@@ -96,7 +101,7 @@ grammar Assembler is export {
             | AX|BX|CX|DX|SI|DI|BP|SP
             | AL|CL|DL|BL|AH|CH|DH|BH
             | ES|CS|SS|DS|FS|GS
-            | CR0|CR2|CR3|CR4 ] }
+            | CR0|CR2|CR3|CR4 ] <|w> }
 
     # 文の定義
     rule label_stmt { <label> }
@@ -107,18 +112,22 @@ grammar Assembler is export {
     token config_type { :i BITS|INSTRSET|OPTIMIZE|FORMAT|PADDING|PADSET|SECTION|ABSOLUTE|FILE }
 
     rule mnemonic_stmt { <mnemonic_op_any> <operand_list> }
-    token opcode_stmt { <mnemonic_op_any> }
+    token opcode_stmt { <mnemonic_op_any> <|w> }
     token mnemonic_op_any {
-        | :i @( %MNEMONIC_MAP.keys.sort({ $^b.chars <=> $^a.chars }) )
-        | <mnemonic_ident>
+        <!before :i [ ORG | DB | DW | DD | RESB ] <|w>>
+        [
+            | :i @( %MNEMONIC_MAP.keys.sort({ $^b.chars <=> $^a.chars }) )
+            | <mnemonic_ident>
+        ]
+        <|w>
     }
     token mnemonic_ident {
         <!before '.'>
-        <!before [ :i EQU|GLOBAL|EXTERN|BYTE|WORD|DWORD|FAR ] <|w>>
+        <!before :i [ EQU|GLOBAL|EXTERN|BYTE|WORD|DWORD|FAR ] <|w>>
         <ident>
     }
     token ident_not_reserved {
-        <!before [ :i EQU|GLOBAL|EXTERN|BYTE|WORD|DWORD|FAR ] <|w>>
+        <!before :i [ EQU|GLOBAL|EXTERN|BYTE|WORD|DWORD|FAR|ORG|DB|DW|DD|RESB ] <|w>>
         <ident>
     }
 

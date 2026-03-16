@@ -105,6 +105,14 @@ class AssemblerActions is export does Rakusk::Util::Evaluator {
         make $node;
     }
 
+    method org_stmt($/) {
+        make ConfigStmt.new(type => 'ORG', value => $<exp>.made);
+    }
+
+    method db_stmt($/) {
+        make PseudoNode.new(mnemonic => $/.Str.trim.split(/\s+/)[0].uc, operands => $<operand_list>.made);
+    }
+
     method opcode_stmt($/) {
         my $m = $<mnemonic_op_any>.uc;
         my @variants = |(%MNEMONIC_MAP{$m} // []);
