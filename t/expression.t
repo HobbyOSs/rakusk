@@ -1,6 +1,7 @@
 use v6;
 use Test;
 use Rakusk::Grammar;
+use Rakusk::Actions;
 use Rakusk::AST;
 
 plan *;

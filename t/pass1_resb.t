@@ -3,6 +3,7 @@ use Test;
 use Rakusk::AST;
 use Rakusk::Pass1;
 use Rakusk::Grammar;
+use Rakusk::Actions;
 
 plan 1;
 

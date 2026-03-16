@@ -13,6 +13,8 @@ class AssembledResult is export {
     has %.symbols;
 }
 
+use Rakusk::Actions;
+
 our sub assemble(Str $source) is export {
     # 1. データの読み込み
     my %regs = %Rakusk::Util::REGS_DATA;
