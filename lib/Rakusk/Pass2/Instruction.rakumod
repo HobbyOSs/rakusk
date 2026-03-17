@@ -192,12 +192,34 @@ method encode-modrm-sib-disp($node, %info, %env) {
             return Buf.new($modrm);
         }
         when 'sreg-reg' {
-            my $modrm = pack-modrm(mod => 3, reg => @ops[0].index, rm => @ops[1].index);
-            return Buf.new($modrm);
+            my $sreg_op = @ops[0];
+            my $rm_op = @ops[1];
+            if $rm_op ~~ Register {
+                my $modrm = pack-modrm(mod => 3, reg => $sreg_op.index // 0, rm => $rm_op.index // 0);
+                return Buf.new($modrm);
+            } else { # Memory
+                my ($mod, $rm, $disp_bytes, $sib, $needs_67) = self.encode_mem_op($rm_op, %env);
+                my $modrm = pack-modrm(mod => $mod // 0, reg => $sreg_op.index // 0, rm => $rm // 0);
+                my $bin = Buf.new($modrm);
+                $bin ~= $sib if $sib;
+                $bin ~= $disp_bytes if $disp_bytes;
+                return $bin;
+            }
         }
         when 'reg-sreg' {
-            my $modrm = pack-modrm(mod => 3, reg => @ops[1].index, rm => @ops[0].index);
-            return Buf.new($modrm);
+            my $rm_op = @ops[0];
+            my $sreg_op = @ops[1];
+            if $rm_op ~~ Register {
+                my $modrm = pack-modrm(mod => 3, reg => $sreg_op.index // 0, rm => $rm_op.index // 0);
+                return Buf.new($modrm);
+            } else { # Memory
+                my ($mod, $rm, $disp_bytes, $sib, $needs_67) = self.encode_mem_op($rm_op, %env);
+                my $modrm = pack-modrm(mod => $mod // 0, reg => $sreg_op.index // 0, rm => $rm // 0);
+                my $bin = Buf.new($modrm);
+                $bin ~= $sib if $sib;
+                $bin ~= $disp_bytes if $disp_bytes;
+                return $bin;
+            }
         }
         when 'sreg' {
             # オプコードは get-base-opcode で処理済み
@@ -214,7 +236,7 @@ method encode-modrm-sib-disp($node, %info, %env) {
             my $reg_op = @ops.grep(Register)[0];
             my $mem_op = @ops.grep(Memory)[0];
             my ($mod, $rm, $disp_bytes, $sib, $needs_67) = self.encode_mem_op($mem_op, %env);
-            my $modrm = pack-modrm(mod => $mod, reg => $reg_op.index, rm => $rm);
+            my $modrm = pack-modrm(mod => $mod // 0, reg => $reg_op.index // 0, rm => $rm // 0);
             my $bin = Buf.new($modrm);
             $bin ~= $sib if $sib;
             $bin ~= $disp_bytes if $disp_bytes;

@@ -27,7 +27,7 @@
 - [x] 命令サイズの微細な不一致の修正 (Day 20 harib17b で残り2バイトのズレ)
 - [x] Day 20Suite Harib17b
 - [x] Day 20Suite Harib17c/d/e/g/h
-- [ ] Day 21Suite Harib18d/e/g
+- [x] Day 21Suite Harib18d/e/g
 - [ ] Day 22Suite Harib19b/c
 - [ ] Day 25Suite Harib22f
 

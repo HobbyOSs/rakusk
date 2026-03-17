@@ -48,6 +48,7 @@ class AssemblerActions is export does Rakusk::Util::Evaluator {
     has Int $.bit_mode is rw = 16;
     has %!symbols;
     has %!externs;
+    has Str $!current_global_label = "";
 
     method TOP($/) {
         make $<statement>».made.grep(*.defined);
@@ -74,11 +75,20 @@ class AssemblerActions is export does Rakusk::Util::Evaluator {
     }
 
     method label_stmt($/) {
-        make LabelStmt.new(label => $<label><ident>.Str);
+        my $name = $<label><ident>.Str;
+        if $name.starts-with('.') {
+            $name = $!current_global_label ~ $name;
+        } else {
+            $!current_global_label = $name;
+        }
+        make LabelStmt.new(label => $name);
     }
 
     method declare_stmt($/) {
         my $name = ($<ident> // $<ident_not_reserved>).Str;
+        if $name.starts-with('.') {
+            $name = $!current_global_label ~ $name;
+        }
         my $val_expr = $<exp>.made;
         my $node = DeclareStmt.new(name => $name, value => $val_expr);
         my $val = self.eval-to-any($val_expr, { symbols => %!symbols });
@@ -233,16 +243,17 @@ class AssemblerActions is export does Rakusk::Util::Evaluator {
             }
             when 'sreg-reg' {
                 return False unless @ops.elems == 2;
-                return False unless @ops[0] ~~ Register && @ops[1] ~~ Register;
-                return @ops[0].is-segment && (@ops[1].width == 16 || @ops[1].width == 32);
+                return False unless @ops[0] ~~ Register && (@ops[1] ~~ Register || @ops[1] ~~ Memory);
+                return @ops[0].is-segment && (@ops[1] !~~ Register || @ops[1].width == 16 || @ops[1].width == 32);
             }
             when 'reg-sreg' {
                 return False unless @ops.elems == 2;
-                return False unless @ops[0] ~~ Register && @ops[1] ~~ Register;
-                return @ops[1].is-segment && (@ops[0].width == 16 || @ops[0].width == 32);
+                return False unless (@ops[0] ~~ Register || @ops[0] ~~ Memory) && @ops[1] ~~ Register;
+                return @ops[1].is-segment && (@ops[0] !~~ Register || @ops[0].width == 16 || @ops[0].width == 32);
             }
             when 'reg-mem' {
                 return False unless @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Memory;
+                return False if @ops[0].is-segment || @ops[0].is-control;
                 if $v_width != 0 {
                     return False if @ops[0].width != $v_width;
                 }
@@ -250,6 +261,7 @@ class AssemblerActions is export does Rakusk::Util::Evaluator {
             }
             when 'mem-reg' {
                 return False unless @ops.elems == 2 && @ops[0] ~~ Memory && @ops[1] ~~ Register;
+                return False if @ops[1].is-segment || @ops[1].is-control;
                 if $v_width != 0 {
                     return False if @ops[1].width != $v_width;
                 }
@@ -484,7 +496,11 @@ class AssemblerActions is export does Rakusk::Util::Evaluator {
                     $f = StringFactor.new(value => $s);
                 }
             } elsif ($<ident> // $<ident_not_reserved>) -> $id {
-                $f = IdentFactor.new(value => $id.Str);
+                my $name = $id.Str;
+                if $name.starts-with('.') {
+                    $name = $!current_global_label ~ $name;
+                }
+                $f = IdentFactor.new(value => $name);
             } elsif $/.Str eq '$' {
                 $f = IdentFactor.new(value => '$');
             }

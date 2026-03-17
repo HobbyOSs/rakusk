@@ -69,8 +69,11 @@ init-data();
 
 # ModR/Mバイトを組み立てる関数
 # [ Mod (2bit) | Reg/Opcode (3bit) | R/M (3bit) ]
-sub pack-modrm(Int :$mod, Int :$reg, Int :$rm) is export {
-    return ($mod +< 6) +| ($reg +< 3) +| $rm;
+sub pack-modrm(:$mod, :$reg, :$rm) is export {
+    my $m = ($mod // 0).Int;
+    my $r = ($reg // 0).Int;
+    my $i = ($rm // 0).Int;
+    return ($m +< 6) +| ($r +< 3) +| $i;
 }
 
 # リトルエンディアンで数値をBufに変換するユーティリティ
