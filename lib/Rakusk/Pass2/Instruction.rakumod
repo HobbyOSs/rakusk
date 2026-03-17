@@ -227,6 +227,11 @@ method encode-modrm-sib-disp($node, %info, %env) {
             # debug "DEBUG: mod=$mod reg=$reg_field rm=$rm" if %*ENV<RAKUSK_DEBUG>;
             my $modrm = pack-modrm(mod => $mod // 0, reg => $reg_field, rm => $rm // 0);
             my $bin = Buf.new($modrm);
+            if $type eq 'mem-far' && self.bit_mode == 32 && ($mem_op.size_prefix // '') eq 'DWORD' {
+                # nask compatible: if size prefix is DWORD for far memory operand in 32-bit mode,
+                # it's usually 48-bit pointer (32-bit offset + 16-bit selector).
+                # nask doesn't seem to add 0x66 in this case for JMP FAR [mem].
+            }
             $bin ~= $sib if $sib;
             $bin ~= $disp_bytes if $disp_bytes;
             return $bin;
@@ -307,7 +312,9 @@ method encode-immediate($node, %info, %env) {
                         # 重複を排除した順序
                         my @all_externs = self.extern_symbols.unique;
                         my @all_globals = self.global_symbols.unique;
-
+                        # No, let's keep the current logic but be careful about symbol ordering.
+                        # Actually, wrap-wcoff uses self.extern_symbols.unique and self.global_symbols.unique.
+                        
                         for @all_externs -> $e {
                             if $e eq $name { $found = True; last; }
                             $sym_idx++;
@@ -320,7 +327,7 @@ method encode-immediate($node, %info, %env) {
                         }
                         my $prefix_count = self.get-prefixes($node, %info, %env).elems;
                         %env<relocations>.push({
-                            offset => %env<PC> + $prefix_count + 1,
+                            offset => %env<PC> + $prefix_count + (%info<opcode>.chars / 2).Int,
                             sym_idx => $sym_idx,
                             type => 20 # REL_I386_REL32
                         });

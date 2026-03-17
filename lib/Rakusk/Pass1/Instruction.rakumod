@@ -52,8 +52,15 @@ method process-JMP($node, %regs, %env) {
     my @operands = $node.operands;
     my %info = $node.info;
 
-    if (%info<type> // '') eq 'near-jump' {
+    my $type = %info<type> // '';
+    if $type eq 'near-jump' {
         self.pc += (self.bit_mode == 16 ?? 3 !! 5);
+        return;
+    }
+
+    if $type eq 'mem-far' {
+        # 間接FARジャンプ/コール。通常の命令と同様にサイズ計算が可能。
+        self.pc += self.size-of-instruction($node, %regs, %env);
         return;
     }
 
