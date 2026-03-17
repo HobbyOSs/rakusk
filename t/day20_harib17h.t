@@ -4,7 +4,7 @@ use Rakusk;
 use lib 't';
 use TestHelper;
 
-plan :skip-all("Currently failing, needs grammar/logic investigation"); subtest "harib17h (Day 20)" => {
+subtest "harib17h (Day 20)" => {
     my $asm = q:to/ASM/;
 ; naskfunc
 ; TAB=4
