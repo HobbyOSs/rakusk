@@ -6,6 +6,9 @@
   "authors": [
     "Cline"
   ],
+  "bin": [
+    "bin/rakusk"
+  ],
   "depends": [
     "JSON::Fast"
   ],
