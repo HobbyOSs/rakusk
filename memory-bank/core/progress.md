@@ -19,8 +19,8 @@
     - リロケーションがない場合でもセクションヘッダにポインタを保持 (nask互換)
 
 ## 現在の進捗状況
-- **Day 01 〜 Day 15**: 完了（Harib12c までの全テストパスを達成）
-- **Day 20 〜**: デグレおよび命令追加が必要
+- **Day 01 〜 Day 22**: 完了（Harib19b までの全テストパスを達成）
+- **Day 22 〜 25**: 継続中（Harib19c 以降で文法の不一致あり）
 
 ## 未実装 / 今後の課題 (Issue #12 より)
 - [x] 32ビットモードにおける `PUSH [mem]` 等のバリアント追加 (Day 20以降で発生)
@@ -28,7 +28,8 @@
 - [x] Day 20Suite Harib17b
 - [x] Day 20Suite Harib17c/d/e/g/h
 - [x] Day 21Suite Harib18d/e/g
-- [ ] Day 22Suite Harib19b/c
+- [x] Day 22Suite Harib19b
+- [ ] Day 22Suite Harib19c
 - [ ] Day 25Suite Harib22f
 
 ## マイルストーン

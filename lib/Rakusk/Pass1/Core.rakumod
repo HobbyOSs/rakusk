@@ -21,10 +21,16 @@ has Str $.current_section is rw = ".text";
 method evaluate(@ast, %regs) {
     @!ast = @ast;
 
-    # 1. AST内の全ジャンプ命令の $.current_size を 2 にリセット（初回パスの楽観的初期化）
+    # 1. AST内の全ジャンプ命令の $.current_size を初期化
     for @!ast -> $node {
         if $node ~~ InstructionNode && ($node.mnemonic eq 'JMP' || $node.mnemonic ~~ /^ J/ || $node.mnemonic eq 'CALL') {
-            $node.current_size = 2;
+            # 相対ジャンプの可能性があるもの（オペランドが1つで、間接参照でないもの）だけを2バイトにリセットする
+            if $node.operands.elems == 1 && $node.operands[0] ~~ Immediate {
+                $node.current_size = 2;
+            } else {
+                # 間接ジャンプやFARジャンプなどはリセットせず、デフォルトのサイズ計算に任せる
+                $node.current_size = 0; 
+            }
         }
     }
     

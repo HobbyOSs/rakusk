@@ -51,6 +51,8 @@ method process-JMP($node, %regs, %env) {
     my $current_size = $node.current_size;
 
     my $type = %info<type> // '';
+
+    # 1. 特殊なジャンプ形式（間接、FARなど）の優先処理
     if $type eq 'near-jump' {
         my $size = (self.bit_mode == 16 ?? 3 !! 5);
         $node.current_size = $size;
@@ -58,7 +60,7 @@ method process-JMP($node, %regs, %env) {
         return;
     }
 
-    if $type eq 'mem-far' {
+    if $type eq 'mem-far' || $type eq 'mem-near' || $type eq 'reg-near' {
         my $size = self.size-of-instruction($node, %regs, %env);
         $node.current_size = $size;
         self.pc += $size;
@@ -77,13 +79,14 @@ method process-JMP($node, %regs, %env) {
             } else {
                 $size = 5; # ptr16:16
             }
-        } elsif $mnemonic eq 'CALL' {
+        } elsif $mnemonic eq 'CALL' && $op ~~ Immediate {
             # CALL rel16/rel32 (NEAR CALL)
             $size = (self.bit_mode == 16 ?? 3 !! 5);
-        } elsif $mnemonic eq 'JMP' || $mnemonic ~~ /^ J/ {
+        } elsif ($mnemonic eq 'JMP' || $mnemonic ~~ /^ J/) && $op ~~ Immediate {
             # JMP/Jcc rel8/rel16/rel32 (BDO対象)
             $size = self.calculate-jump-size($node, %regs, %env);
         } else {
+            # それ以外の形式（レジスタ間接 JMP EAX など）
             $size = self.size-of-instruction($node, %regs, %env);
         }
     } else {

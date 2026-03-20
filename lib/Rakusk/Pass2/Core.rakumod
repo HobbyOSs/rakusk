@@ -49,6 +49,16 @@ method assemble(%regs, %symbols = {}) {
             @!listing.push({ :$node, :$pc, :type<pseudo> });
             next;
         }
+        if $node ~~ ConfigStmt && $node.type eq 'SECTION' {
+            $pc = 0;
+            @!listing.push({ :$node, :$pc, :type<config> });
+            next;
+        }
+        if $node ~~ PseudoNode && $node.mnemonic eq 'SECTION' {
+            $pc = 0;
+            @!listing.push({ :$node, :$pc, :type<pseudo> });
+            next;
+        }
 
         my %env = symbols => %symbols, PC => $pc, strict_eval => True, relocations => @!relocations;
         my $bin = self.encode-node($node, %regs, %env);
