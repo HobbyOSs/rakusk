@@ -19,8 +19,7 @@
     - リロケーションがない場合でもセクションヘッダにポインタを保持 (nask互換)
 
 ## 現在の進捗状況
-- **Day 01 〜 Day 22**: 完了（Harib19b までの全テストパスを達成）
-- **Day 22 〜 25**: 継続中（Harib19c 以降で文法の不一致あり）
+- **Day 01 〜 Day 25**: 完了（Harib22f までの全テストパスを達成）
 
 ## 未実装 / 今後の課題 (Issue #12 より)
 - [x] 32ビットモードにおける `PUSH [mem]` 等のバリアント追加 (Day 20以降で発生)
@@ -29,11 +28,11 @@
 - [x] Day 20Suite Harib17c/d/e/g/h
 - [x] Day 21Suite Harib18d/e/g
 - [x] Day 22Suite Harib19b
-- [ ] Day 22Suite Harib19c
-- [ ] Day 25Suite Harib22f
+- [x] Day 22Suite Harib19c
+- [x] Day 25Suite Harib22f
 
 ## マイルストーン
 1. **[DONE] Bootloader Excellence**: Day 01〜05 のブートローダー関連を完全にパス。
 2. **[DONE] C-Language Bridge**: Day 06 以降、C言語から呼ばれるアセンブラ関数の完全なアセンブル。
 3. **[DONE] Advanced OS Features (Part 1)**: Day 15 (Harib12c) までのメモリ管理・ウィンドウ表示関連の命令・出力をサポート。
-4. **[ACTIVE] Advanced OS Features (Part 2)**: マルチタスク、例外処理、高度なアプリ実行に必要な機能の完成。
+4. **[DONE] Advanced OS Features (Part 2)**: マルチタスク、例外処理、高度なアプリ実行に必要な機能の完成。
