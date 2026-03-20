@@ -21,18 +21,9 @@
 ## 現在の進捗状況
 - **Day 01 〜 Day 25**: 完了（Harib22f までの全テストパスを達成）
 
-## 未実装 / 今後の課題 (Issue #12 より)
-- [x] 32ビットモードにおける `PUSH [mem]` 等のバリアント追加 (Day 20以降で発生)
-- [x] 命令サイズの微細な不一致の修正 (Day 20 harib17b で残り2バイトのズレ)
-- [x] Day 20Suite Harib17b
-- [x] Day 20Suite Harib17c/d/e/g/h
-- [x] Day 21Suite Harib18d/e/g
-- [x] Day 22Suite Harib19b
-- [x] Day 22Suite Harib19c
-- [x] Day 25Suite Harib22f
-
 ## マイルストーン
 1. **[DONE] Bootloader Excellence**: Day 01〜05 のブートローダー関連を完全にパス。
 2. **[DONE] C-Language Bridge**: Day 06 以降、C言語から呼ばれるアセンブラ関数の完全なアセンブル。
 3. **[DONE] Advanced OS Features (Part 1)**: Day 15 (Harib12c) までのメモリ管理・ウィンドウ表示関連の命令・出力をサポート。
 4. **[DONE] Advanced OS Features (Part 2)**: マルチタスク、例外処理、高度なアプリ実行に必要な機能の完成。
+5. **[DONE] v2.0.0 Release**: 全 OS サンプルコードのバイナリ一致、ジャンプ最適化（BDO）の完成、およびリポジトリの整理。

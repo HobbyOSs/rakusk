@@ -6,49 +6,14 @@ on:
       - 'v*'
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Install Raku
-        uses: Raku/setup-raku@v1
-        with:
-          raku-version: 'latest'
-
-      - name: Install dependencies
-        run: |
-          zef install --deps-only .
-          zef install App::Packer::MoarVM
-
-      - name: Build binary
-        run: |
-          mkdir build
-          p6-packer --target=${{ runner.os == 'Linux' && 'linux' || 'macos' }} --output=build/rakusk-${{ runner.os }} main.raku
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: rakusk-${{ runner.os }}
-          path: build/rakusk-${{ runner.os }}
-
   release:
-    needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v3
-        with:
-          path: artifacts
+      - uses: actions/checkout@v4
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
-          files: |
-            artifacts/rakusk-Linux/rakusk-Linux
-            artifacts/rakusk-macOS/rakusk-macOS
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -70,9 +70,12 @@ init-data();
 # ModR/Mバイトを組み立てる関数
 # [ Mod (2bit) | Reg/Opcode (3bit) | R/M (3bit) ]
 sub pack-modrm(:$mod, :$reg, :$rm) is export {
-    my $m = ($mod // 0).Int;
-    my $r = ($reg // 0).Int;
-    my $i = ($rm // 0).Int;
+    my $m = ($mod // 0);
+    $m = ($m ~~ Int) ?? $m !! (($m ~~ Mu) ?? $m.Int !! 0);
+    my $r = ($reg // 0);
+    $r = ($r ~~ Int) ?? $r !! (($r ~~ Mu) ?? $r.Int !! 0);
+    my $i = ($rm // 0);
+    $i = ($i ~~ Int) ?? $i !! (($i ~~ Mu) ?? $i.Int !! 0);
     return ($m +< 6) +| ($r +< 3) +| $i;
 }
 
