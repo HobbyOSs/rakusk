@@ -9,6 +9,7 @@ my $VERSION = "2.0.0";
 #| rakusk: Raku-based x86 Assembler
 sub MAIN(
     *@args,
+    Str :$enc,                   #= ソースコードのエンコーディング (utf8, cp932等)
     Bool :v(:$version) = False,  #= バージョンとライセンス情報を表示する
     Bool :d(:$debug) = False,    #= デバッグログを出力する
     Bool :i(:$show-info) = False #= 命令のサイズと情報を表示
@@ -39,9 +40,41 @@ EOF
     }
 
     my $code;
+    my $used-enc = $enc // 'utf8';
 
     if $assembly-src.IO.f {
-        $code = $assembly-src.IO.slurp;
+        if $enc.defined {
+            try {
+                $code = $assembly-src.IO.slurp(:enc($enc));
+                CATCH {
+                    default {
+                        # Raku本体がサポートしていない場合、iconvを試みる
+                        $code = read-with-iconv($assembly-src, $enc);
+                    }
+                }
+            }
+        } else {
+            # 自動判別（UTF-8 -> CP932）
+            try {
+                $code = $assembly-src.IO.slurp(:enc<utf8>);
+                $used-enc = 'utf8';
+                CATCH {
+                    default {
+                        try {
+                            $code = $assembly-src.IO.slurp(:enc<cp932>);
+                            $used-enc = 'cp932';
+                            CATCH {
+                                default {
+                                    # iconvを試みる
+                                    $code = read-with-iconv($assembly-src, 'cp932');
+                                    $used-enc = 'cp932';
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     } else {
         note "RAKUSK : can't open $assembly-src";
         exit 17;
@@ -52,9 +85,11 @@ EOF
         exit 1;
     }
 
-    say "source: $assembly-src, object: $assembly-dst";
+    say "source: $assembly-src, object: $assembly-dst (encoding: $used-enc)";
 
-    my $res = assemble($code);
+    # 出力バイナリのエンコーディング設定。DB "文字列" 等で使用される。
+    # Rakuの内部文字列をバイナリ化する際のエンコーディングを指定する。
+    my $res = assemble($code, :enc($used-enc));
     my $bin = $res.binary;
 
     if $show-info {
@@ -90,4 +125,15 @@ EOF
 
 sub match_success($val) {
     return $val.defined && $val.elems > 0;
+}
+
+sub read-with-iconv($path, $enc) {
+    my $proc = run 'iconv', '-f', $enc, '-t', 'utf-8', $path, :out, :err;
+    my $content = $proc.out.slurp(:close);
+    if $proc.exitcode != 0 {
+        my $err = $proc.err.slurp(:close);
+        note "RAKUSK : iconv failed for $path with encoding $enc: $err";
+        exit 1;
+    }
+    return $content;
 }

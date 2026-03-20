@@ -15,9 +15,10 @@ class AssembledResult is export {
 
 use Rakusk::Actions;
 
-our sub assemble(Str $source) is export {
-    # 1. データの読み込み
+our sub assemble(Str $source, Str :$enc = 'ascii') is export {
+    # 1. データの読み込みと設定
     my %regs = %Rakusk::Util::REGS_DATA;
+    Rakusk::Util::<$CURRENT-ENCODING> = $enc;
 
     # 2. Parse (AST構築)
     my $actions = AssemblerActions.new();

@@ -7,6 +7,7 @@ unit module Rakusk::Util;
 # データ読み込み用のキャッシュ
 our %REGS_DATA is export;
 our %INST_DATA is export;
+our $CURRENT-ENCODING is export = 'ascii';
 
 # 初期化処理：外部ファイルまたはリソースからデータを読み込む
 sub init-data() {
@@ -90,9 +91,27 @@ sub pack-le(Int $val, Int $width) is export {
     return $bin;
 }
 
-# 文字列をバイナリ（ASCII）に変換するユーティリティ
+# 文字列をバイナリに変換するユーティリティ
 sub pack-str(Str $val) is export {
-    return $val.encode('ascii');
+    # デフォルトは ascii だが、Shift-JIS 等が指定された場合はそれを使用する
+    try {
+        return $val.encode($CURRENT-ENCODING);
+        CATCH {
+            default {
+                # Raku本体がサポートしていない場合、iconvを試みる
+                my $proc = run 'iconv', '-f', 'utf-8', '-t', $CURRENT-ENCODING, :in, :out, :err;
+                $proc.in.print($val);
+                $proc.in.close;
+                my $bin = $proc.out.read;
+                if $proc.exitcode == 0 {
+                    return $bin;
+                } else {
+                    # iconvも失敗した場合は元のエラーを投げるか、例外を発生させる
+                    die "RAKUSK : Encoding failed for '$val' with $CURRENT-ENCODING using iconv";
+                }
+            }
+        }
+    }
 }
 
 # 共通の式評価ロジックを提供するRole
