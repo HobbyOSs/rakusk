@@ -9,6 +9,11 @@ method encode-instruction($node, %regs, %env) {
     my $mnemonic = $node.mnemonic;
     my $type = %info<type> // '';
 
+    # ジャンプ最適化(BDO)対象の命令かチェック
+    if ($mnemonic eq 'JMP' || $mnemonic ~~ /^ J/) && ($node.current_size > 0) {
+        return self.encode-bdo-jump($node, %info, %env);
+    }
+
     # 1. プレフィックスの取得
     my $bin = self.get-prefixes($node, %info, %env);
 
@@ -22,6 +27,97 @@ method encode-instruction($node, %regs, %env) {
     $bin ~= self.encode-immediate($node, %info, %env);
 
     return $bin;
+}
+
+method encode-bdo-jump($node, %info, %env) {
+    my $mnemonic = $node.mnemonic;
+    my $size = $node.current_size;
+    my $target_op = $node.operands[0];
+    my $target_addr = self.eval-to-int($target_op, %env);
+    
+    # ターゲットがまだ未定義（Pass 1の初回など）の場合はダミーを返す
+    # eval-to-int がシンボル未定義で 0 を返す場合があるため、明示的に存在チェック
+    if $target_op ~~ Immediate && $target_op.expr ~~ ImmExp {
+        my $sym = $target_op.expr.factor.eval(%env);
+        if $sym ~~ Str {
+            unless %env<symbols>{$sym}:exists {
+                return Buf.new(0) xx $size;
+            }
+        }
+    }
+
+    unless $target_addr.defined {
+        return Buf.new(0) xx $size;
+    }
+
+    my $disp = $target_addr - (%env<PC> + $size);
+    my $bin = Buf.new();
+
+    if $size == 2 {
+        # Short Jump
+        my $opcode = ($mnemonic eq 'JMP' ?? 0xEB !! self.get-jcc-short-opcode($mnemonic));
+        unless $opcode.defined {
+            # Jcc 以外の J... 命令（JCXZ等）の場合のフォールバック
+            return self.encode-instruction-fallback($node, %env);
+        }
+        $bin.push($opcode);
+        $bin ~= pack-le($disp, 8);
+    } elsif $size == 3 {
+        # JMP rel16 (16-bit mode)
+        $bin.push(0xE9);
+        $bin ~= pack-le($disp, 16);
+    } elsif $size == 4 {
+        # Jcc rel16 (16-bit mode)
+        my $opcode = self.get-jcc-near-opcode($mnemonic);
+        unless $opcode.defined { return self.encode-instruction-fallback($node, %env); }
+        $bin.push(0x0F, $opcode);
+        $bin ~= pack-le($disp, 16);
+    } elsif $size == 5 {
+        # JMP rel32 (32-bit mode)
+        $bin.push(0xE9);
+        $bin ~= pack-le($disp, 32);
+    } elsif $size == 6 {
+        # Jcc rel32 (32-bit mode)
+        my $opcode = self.get-jcc-near-opcode($mnemonic);
+        unless $opcode.defined { return self.encode-instruction-fallback($node, %env); }
+        $bin.push(0x0F, $opcode);
+        $bin ~= pack-le($disp, 32);
+    } else {
+        # フォールバック
+        return self.encode-instruction-fallback($node, %env);
+    }
+    return $bin;
+}
+
+method encode-instruction-fallback($node, %env) {
+    my %info = $node.info;
+    my $bin = self.get-prefixes($node, %info, %env);
+    $bin ~= self.get-base-opcode($node, %info);
+    $bin ~= self.encode-modrm-sib-disp($node, %info, %env);
+    $bin ~= self.encode-immediate($node, %info, %env);
+    return $bin;
+}
+
+method get-jcc-short-opcode($mnemonic) {
+    my %short_opcodes = 
+        JO => 0x70, JNO => 0x71, JB  => 0x72, JNAE => 0x72, JC   => 0x72,
+        JNB => 0x73, JAE => 0x73, JNC => 0x73, JZ  => 0x74, JE   => 0x74,
+        JNZ => 0x75, JNE => 0x75, JBE => 0x76, JNA  => 0x76, JNBE => 0x77,
+        JA  => 0x77, JS  => 0x78, JNS => 0x79, JP  => 0x7A, JPE  => 0x7A,
+        JNP => 0x7B, JPO => 0x7B, JL  => 0x7C, JNGE => 0x7C, JNL  => 0x7D,
+        JGE => 0x7D, JLE => 0x7E, JNG => 0x7E, JNLE => 0x7F, JG   => 0x7F;
+    return %short_opcodes{$mnemonic.uc};
+}
+
+method get-jcc-near-opcode($mnemonic) {
+    my %near_opcodes = 
+        JO => 0x80, JNO => 0x81, JB  => 0x82, JNAE => 0x82, JC   => 0x82,
+        JNB => 0x83, JAE => 0x83, JNC => 0x83, JZ  => 0x84, JE   => 0x84,
+        JNZ => 0x85, JNE => 0x85, JBE => 0x86, JNA  => 0x86, JNBE => 0x87,
+        JA  => 0x87, JS  => 0x88, JNS => 0x89, JP  => 0x8A, JPE  => 0x8A,
+        JNP => 0x8B, JPO => 0x8B, JL  => 0x8C, JNGE => 0x8C, JNL  => 0x8D,
+        JGE => 0x8D, JLE => 0x8E, JNG => 0x8E, JNLE => 0x8F, JG   => 0x8F;
+    return %near_opcodes{$mnemonic.uc};
 }
 
 method get-prefixes($node, %info, %env) {

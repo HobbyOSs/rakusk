@@ -4,7 +4,7 @@ use Rakusk;
 use lib 't';
 use TestHelper;
 
-plan :skip-all("Currently failing, needs grammar/logic investigation"); subtest "harib19b (Day 22)" => {
+subtest "harib19b (Day 22)" => {
     my $asm = q:to/ASM/;
 ; naskfunc
 ; TAB=4
@@ -431,7 +431,9 @@ ASM
     
     );
 
+    say "DEBUG: Starting assembly";
     my $res = assemble($asm);
+    say "DEBUG: Finished assembly";
     my $actual = $res.binary;
     is-binary($actual, $expected, "harib19b binary match");
 }

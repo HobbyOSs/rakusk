@@ -9,5 +9,5 @@ class InstructionNode is Statement is export {
     has $.mnemonic;
     has @.operands;
     has %.info;
-
+    has Int $.current_size is rw = 0;
 }

@@ -7,30 +7,25 @@ unit role Rakusk::Pass1::Instruction does Rakusk::Pass2::Instruction;
 method process-instruction($node, %regs, %env) {
     my $mnemonic = $node.mnemonic;
     
-    # ジャンプ命令判定（これらは推定が必要な場合があるため個別処理を残す）
+    # ジャンプ命令判定
     if $mnemonic ~~ /^ J | ^ CALL / {
         self.process-JMP($node, %regs, %env);
         return;
     }
 
     # それ以外の一般命令はエンコードを試みてサイズを確定させる
-    # Pass 1 の段階で bit_mode が正しく設定されていることを前提にする
     my $size = self.size-of-instruction($node, %regs, %env);
     
     if $size == 0 {
-        # エンコードに失敗した場合（未定義の命令タイプ等）、安全なフォールバック
-        if ($node.info<type> // '') eq 'no-op' {
+        # エンコードに失敗した場合の安全なフォールバック
+        my $type = $node.info<type> // '';
+        if $type eq 'no-op' | 'reg' | 'sreg' {
             $size = 1;
         } else {
-            # type が reg, sreg などの1バイト命令である可能性を考慮
-            my $type = $node.info<type> // '';
-            if $type eq 'reg' || $type eq 'sreg' {
-                $size = 1;
-            } else {
-                $size = 2;
-            }
+            $size = 2;
         }
     }
+    $node.current_size = $size;
     self.pc += $size;
 }
 
@@ -52,15 +47,21 @@ method process-JMP($node, %regs, %env) {
     my @operands = $node.operands;
     my %info = $node.info;
 
+    # 既に確定しているサイズ（単調増加を維持）
+    my $current_size = $node.current_size;
+
     my $type = %info<type> // '';
     if $type eq 'near-jump' {
-        self.pc += (self.bit_mode == 16 ?? 3 !! 5);
+        my $size = (self.bit_mode == 16 ?? 3 !! 5);
+        $node.current_size = $size;
+        self.pc += $size;
         return;
     }
 
     if $type eq 'mem-far' {
-        # 間接FARジャンプ/コール。通常の命令と同様にサイズ計算が可能。
-        self.pc += self.size-of-instruction($node, %regs, %env);
+        my $size = self.size-of-instruction($node, %regs, %env);
+        $node.current_size = $size;
+        self.pc += $size;
         return;
     }
 
@@ -72,27 +73,83 @@ method process-JMP($node, %regs, %env) {
             my $use_32bit = (self.bit_mode == 32 || ($op.size_prefix // '') eq 'DWORD');
             if $use_32bit {
                 $size = 7; # ptr16:32
-                if self.bit_mode == 16 {
-                    $size += 1; # 66h prefix
-                }
+                if self.bit_mode == 16 { $size += 1; }
             } else {
                 $size = 5; # ptr16:16
             }
+        } elsif $mnemonic eq 'CALL' {
+            # CALL rel16/rel32 (NEAR CALL)
+            $size = (self.bit_mode == 16 ?? 3 !! 5);
+        } elsif $mnemonic eq 'JMP' || $mnemonic ~~ /^ J/ {
+            # JMP/Jcc rel8/rel16/rel32 (BDO対象)
+            $size = self.calculate-jump-size($node, %regs, %env);
         } else {
-            # 短い形式(short/near)の選択はパス1の段階では難しい場合があるため、
-            # 現状は安全なサイズを推定する
-            $size = self.estimate-jump-size($mnemonic, self.bit_mode);
+            $size = self.size-of-instruction($node, %regs, %env);
         }
     } else {
-        $size = self.estimate-jump-size($mnemonic, self.bit_mode);
+        $size = self.size-of-instruction($node, %regs, %env);
     }
     
+    # 単調増加の保証
+    if $size < $current_size {
+        $size = $current_size;
+    }
+    
+    $node.current_size = $size;
     self.pc += $size;
 }
 
+method calculate-jump-size($node, %regs, %env) {
+    my $mnemonic = $node.mnemonic;
+    my $target_op = $node.operands[0];
+    
+    # ターゲットアドレスの取得
+    # シンボル未定義の場合は eval-to-int が 0 を返す可能性があるため、明示的に存在チェックを行う
+    my $target_addr = self.eval-to-int($target_op, %env);
+    
+    if $target_op ~~ Immediate && $target_op.expr ~~ ImmExp {
+        my $sym = $target_op.expr.factor.eval(%env);
+        if $sym ~~ Str {
+            unless %env<symbols>{$sym}:exists {
+                # 2. 前方参照（TargetAddress が未確定）の場合、初回パス等では拡張をスキップし、2バイトを維持
+                return 2;
+            }
+        }
+    }
+
+    # 3. 変位計算式を厳密に統一: Displacement = TargetAddress - (JumpInstAddress + 2)
+    my $disp = $target_addr - (self.pc + 2);
+    
+    # 判定条件: -128 <= Displacement <= 127 の範囲内なら Short Jump
+    if -128 <= $disp <= 127 {
+        # nask compatible: 前方参照の場合は 127 バイト以内でも特定の条件下で NEAR を選ぶ場合がある。
+        # 指示書には最短と仮定するようにあるので、一旦 2 を返す基本形に戻す。
+        return 2;
+    }
+
+    # JCXZ / JECXZ は rel8 のみサポート
+    if $mnemonic eq 'JCXZ' | 'JECXZ' {
+        return 2;
+    }
+
+    # 4. 32ビットモードにおけるサイズ定数の再確認
+    my $needed_size;
+    if self.bit_mode == 32 {
+        $needed_size = ($mnemonic eq 'JMP' ?? 5 !! 6); # JMP=5, Jcc=6
+    } else {
+        $needed_size = ($mnemonic eq 'JMP' ?? 3 !! 4); # JMP=3, Jcc=4
+    }
+
+    # デバッグ情報の強化
+    if %*ENV<RAKUSK_DEBUG> && $needed_size > ($node.current_size // 2) {
+        say "DEBUG: [BDO Expansion] mnemonic=$mnemonic PC={self.pc} target=$target_addr disp=$disp: size 2 -> $needed_size";
+    }
+
+    return $needed_size;
+}
+
 method estimate-jump-size($mnemonic, $bit_mode) {
-    # 32bit mode でも条件分岐はまず 2 byte (short jump) と仮定してみる
-    # これによりラベル位置が nask と一致しやすくなる
+    # 互換性のためのフォールバック
     if $mnemonic eq 'CALL' {
         return $bit_mode == 16 ?? 3 !! 5;
     }

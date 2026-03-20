@@ -20,30 +20,52 @@ has Str $.current_section is rw = ".text";
 
 method evaluate(@ast, %regs) {
     @!ast = @ast;
-    
-    # パス1: ラベル・定数の収集とPCの計算
-    $!pc = 0;
-    # bit_mode は初期化せず、コンストラクタで渡された値（またはデフォルト）を維持する
-    @!global_symbols = [];
-    @!extern_symbols = [];
-    @!symbol_order = [];
 
+    # 1. AST内の全ジャンプ命令の $.current_size を 2 にリセット（初回パスの楽観的初期化）
     for @!ast -> $node {
-        my %env = symbols => %!symbols, PC => $!pc;
-
-        if $node ~~ LabelStmt | DeclareStmt | ConfigStmt {
-            self.process-statement($node, %regs, %env);
-        } elsif $node ~~ InstructionNode {
-            self.process-instruction($node, %regs, %env);
-        } elsif $node ~~ PseudoNode {
-            self.process-pseudo($node, %env);
-        } elsif $node ~~ ExportSymStmt {
-            self.global_symbols.append($node.symbols);
-            self.symbol_order.append($node.symbols);
-        } elsif $node ~~ ExternSymStmt {
-            self.extern_symbols.append($node.symbols);
-            self.symbol_order.append($node.symbols);
+        if $node ~~ InstructionNode && ($node.mnemonic eq 'JMP' || $node.mnemonic ~~ /^ J/ || $node.mnemonic eq 'CALL') {
+            $node.current_size = 2;
         }
     }
+    
+    # マルチパス最適化（BDO）のループ
+    my $changed = True;
+    my $pass_count = 0;
+    my $max_passes = 100;
+
+    while $changed && $pass_count < $max_passes {
+        $changed = False;
+        $pass_count++;
+        $!pc = 0;
+        
+        # bit_mode は初期化せず、コンストラクタで渡された値（またはデフォルト）を維持する
+        @!global_symbols = [];
+        @!extern_symbols = [];
+        @!symbol_order = [];
+
+        for @!ast -> $node {
+            my %env = symbols => %!symbols, PC => $!pc;
+
+            if $node ~~ LabelStmt | DeclareStmt | ConfigStmt {
+                self.process-statement($node, %regs, %env);
+            } elsif $node ~~ InstructionNode {
+                my $old_size = $node.current_size;
+                self.process-instruction($node, %regs, %env);
+                if $node.current_size > $old_size {
+                    $changed = True;
+                }
+            } elsif $node ~~ PseudoNode {
+                self.process-pseudo($node, %env);
+            } elsif $node ~~ ExportSymStmt {
+                self.global_symbols.append($node.symbols);
+                self.symbol_order.append($node.symbols);
+            } elsif $node ~~ ExternSymStmt {
+                self.extern_symbols.append($node.symbols);
+                self.symbol_order.append($node.symbols);
+            }
+        }
+    }
+    
+    say "DEBUG: Pass 1 completed in $pass_count passes" if %*ENV<RAKUSK_DEBUG>;
     return self;
 }
