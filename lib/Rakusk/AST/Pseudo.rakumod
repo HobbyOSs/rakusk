@@ -9,5 +9,5 @@ unit module Rakusk::AST::Pseudo;
 class PseudoNode is Statement is export {
     has $.mnemonic;
     has @.operands;
-
+    has Int $.current_size is rw = 0;
 }

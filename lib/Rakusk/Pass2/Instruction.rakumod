@@ -126,7 +126,7 @@ method get-prefixes($node, %info, %env) {
     
     # セグメントオーバーライドプレフィックス
     for @ops -> $op {
-        if $op ~~ Memory && $op.seg_override {
+        if $op.can('seg_override') && $op.seg_override {
             my $seg_reg_name = $op.seg_override.name;
             my %seg_prefixes = ES => 0x26, CS => 0x2E, SS => 0x36, DS => 0x3E, FS => 0x64, GS => 0x65;
             if %seg_prefixes{$seg_reg_name} {
@@ -161,7 +161,7 @@ method get-prefixes($node, %info, %env) {
         if $imm ~~ Immediate && $imm.expr.is-imm8(%env) {
             # size-of-instruction 用のダミー環境では PC が不定だが
             # is-imm8 は定数判定なので問題ないはず
-            return Buf.new();
+            return $bin;
         }
     }
     
@@ -260,8 +260,10 @@ method get-base-opcode($node, %info) {
     
     if $type ~~ 'reg' | 'reg-imm8' | 'reg-imm16' && %info<base_opcode> {
         my $reg_op = $node.operands[0];
-        my $opcode = %info<base_opcode>.parse-base(16) + $reg_op.index;
-        return Buf.new($opcode);
+        if $reg_op.can('index') && $reg_op.index.defined {
+            my $opcode = %info<base_opcode>.parse-base(16) + $reg_op.index;
+            return Buf.new($opcode);
+        }
     }
 
     if $type eq 'sreg' {

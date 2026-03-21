@@ -17,14 +17,16 @@ method process-instruction($node, %regs, %env) {
     my $size = self.size-of-instruction($node, %regs, %env);
     
     if $size == 0 {
-        # エンコードに失敗した場合の安全なフォールバック
+        # エンコードに失敗した場合でも、プレフィックス分は最低限加算する
+        my $prefix_size = self.get-prefixes($node, $node.info, %env).elems;
         my $type = $node.info<type> // '';
         if $type eq 'no-op' | 'reg' | 'sreg' {
-            $size = 1;
+            $size = 1 + $prefix_size;
         } else {
-            $size = 2;
+            $size = 2 + $prefix_size;
         }
     }
+    
     $node.current_size = $size;
     self.pc += $size;
 }
@@ -37,6 +39,7 @@ method size-of-instruction($node, %regs, %env) {
     %dummy_env<symbols> = %env<symbols>.clone;
     # 32ビットモード情報を正しく引き継ぐ
     %dummy_env<bit_mode> = self.bit_mode;
+    %dummy_env<PC> = self.pc;
     
     my $bin = self.encode-instruction($node, %regs, %dummy_env);
     return $bin.elems;

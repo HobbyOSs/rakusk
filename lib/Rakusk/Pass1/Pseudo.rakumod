@@ -14,11 +14,12 @@ method process-pseudo($node, %env) {
         default {
             # DB, DW, DD, RESB, ALIGNBなどは実際にエンコードしてサイズを測る
             my $bin = self.encode-pseudo($node, %env);
-            if $bin.elems > 0 || $mnemonic eq 'RESB' | 'ALIGNB' | 'DB' | 'DW' | 'DD' {
-                self.pc += $bin.elems;
-            } else {
-                warn "Unknown pseudo-instruction: $mnemonic";
-            }
+            my $size = $bin.elems;
+            
+            # TODO: size estimation when symbols are undefined
+            
+            $node.current_size = $size;
+            self.pc += $size;
         }
     }
 }
