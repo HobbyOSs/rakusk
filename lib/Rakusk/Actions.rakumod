@@ -285,6 +285,10 @@ class AssemblerActions is export does Rakusk::Util::Evaluator {
             }
             when 'reg-imm8' {
                 return False unless @ops.elems == 2 && (@ops[0] ~~ Register || @ops[0] ~~ Memory) && @ops[1] ~~ Immediate;
+                # Memory オペランドの場合、その命令が extension (グループ命令) を持っている必要がある
+                if @ops[0] ~~ Memory {
+                    return False unless $v<extension>.defined;
+                }
 
                 my $target_width = $v_width || 8;
                 my $op_width = 0;
@@ -318,6 +322,10 @@ class AssemblerActions is export does Rakusk::Util::Evaluator {
             }
             when 'reg-imm16' {
                 return False unless @ops.elems == 2 && (@ops[0] ~~ Register || @ops[0] ~~ Memory) && @ops[1] ~~ Immediate;
+                # Memory オペランドの場合、その命令が extension (グループ命令) を持っている必要がある
+                if @ops[0] ~~ Memory {
+                    return False unless $v<extension>.defined;
+                }
                 
                 if @ops[0] ~~ Register {
                     return False if $v<short_reg> && @ops[0].name.uc ne $v<short_reg>.uc;
@@ -399,7 +407,7 @@ class AssemblerActions is export does Rakusk::Util::Evaluator {
                 && !@ops[1].base && !@ops[1].index;
             }
             when 'ax-moffs' {
-                return @ops.elems == 2 && @ops[0] ~~ Register && @ops[0].name eq 'AX' && @ops[1] ~~ Memory
+                return @ops.elems == 2 && @ops[0] ~~ Register && (@ops[0].name eq 'AX' || @ops[0].name eq 'EAX') && @ops[1] ~~ Memory
                 && !@ops[1].base && !@ops[1].index;
             }
             when 'moffs-al' {
@@ -407,7 +415,7 @@ class AssemblerActions is export does Rakusk::Util::Evaluator {
                 && !@ops[0].base && !@ops[0].index;
             }
             when 'moffs-ax' {
-                return @ops.elems == 2 && @ops[0] ~~ Memory && @ops[1] ~~ Register && @ops[1].name eq 'AX'
+                return @ops.elems == 2 && @ops[0] ~~ Memory && @ops[1] ~~ Register && (@ops[1].name eq 'AX' || @ops[1].name eq 'EAX')
                 && !@ops[0].base && !@ops[0].index;
             }
             when 'reg-reg-imm8' {

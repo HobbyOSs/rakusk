@@ -5,10 +5,8 @@ use Rakusk::Util;
 unit role Rakusk::Pass2::Instruction;
 
 method encode-instruction($node, %regs, %env) {
-    say "DEBUG: encoding instruction {$node.mnemonic} at PC={%env<PC>}" if %*ENV<RAKUSK_DEBUG>;
     my %info = $node.info;
     my $mnemonic = $node.mnemonic;
-    my $type = %info<type> // '';
 
     # ジャンプ最適化(BDO)対象の命令かチェック
     if ($mnemonic eq 'JMP' || $mnemonic ~~ /^ J/) && ($node.current_size > 0) {
@@ -100,30 +98,40 @@ method encode-instruction-fallback($node, %env) {
 }
 
 method get-jcc-short-opcode($mnemonic) {
-    my %short_opcodes = 
-        JO => 0x70, JNO => 0x71, JB  => 0x72, JNAE => 0x72, JC   => 0x72,
-        JNB => 0x73, JAE => 0x73, JNC => 0x73, JZ  => 0x74, JE   => 0x74,
-        JNZ => 0x75, JNE => 0x75, JBE => 0x76, JNA  => 0x76, JNBE => 0x77,
-        JA  => 0x77, JS  => 0x78, JNS => 0x79, JP  => 0x7A, JPE  => 0x7A,
-        JNP => 0x7B, JPO => 0x7B, JL  => 0x7C, JNGE => 0x7C, JNL  => 0x7D,
-        JGE => 0x7D, JLE => 0x7E, JNG => 0x7E, JNLE => 0x7F, JG   => 0x7F;
+    my %short_opcodes =
+    JO => 0x70, JNO => 0x71, JB  => 0x72, JNAE => 0x72, JC   => 0x72,
+    JNB => 0x73, JAE => 0x73, JNC => 0x73, JZ  => 0x74, JE   => 0x74,
+    JNZ => 0x75, JNE => 0x75, JBE => 0x76, JNA  => 0x76, JNBE => 0x77,
+    JA  => 0x77, JS  => 0x78, JNS => 0x79, JP  => 0x7A, JPE  => 0x7A,
+    JNP => 0x7B, JPO => 0x7B, JL  => 0x7C, JNGE => 0x7C, JNL  => 0x7D,
+    JGE => 0x7D, JLE => 0x7E, JNG => 0x7E, JNLE => 0x7F, JG   => 0x7F;
     return %short_opcodes{$mnemonic.uc};
 }
 
 method get-jcc-near-opcode($mnemonic) {
-    my %near_opcodes = 
-        JO => 0x80, JNO => 0x81, JB  => 0x82, JNAE => 0x82, JC   => 0x82,
-        JNB => 0x83, JAE => 0x83, JNC => 0x83, JZ  => 0x84, JE   => 0x84,
-        JNZ => 0x85, JNE => 0x85, JBE => 0x86, JNA  => 0x86, JNBE => 0x87,
-        JA  => 0x87, JS  => 0x88, JNS => 0x89, JP  => 0x8A, JPE  => 0x8A,
-        JNP => 0x8B, JPO => 0x8B, JL  => 0x8C, JNGE => 0x8C, JNL  => 0x8D,
-        JGE => 0x8D, JLE => 0x8E, JNG => 0x8E, JNLE => 0x8F, JG   => 0x8F;
+    my %near_opcodes =
+    JO => 0x80, JNO => 0x81, JB  => 0x82, JNAE => 0x82, JC   => 0x82,
+    JNB => 0x83, JAE => 0x83, JNC => 0x83, JZ  => 0x84, JE   => 0x84,
+    JNZ => 0x85, JNE => 0x85, JBE => 0x86, JNA  => 0x86, JNBE => 0x87,
+    JA  => 0x87, JS  => 0x88, JNS => 0x89, JP  => 0x8A, JPE  => 0x8A,
+    JNP => 0x8B, JPO => 0x8B, JL  => 0x8C, JNGE => 0x8C, JNL  => 0x8D,
+    JGE => 0x8D, JLE => 0x8E, JNG => 0x8E, JNLE => 0x8F, JG   => 0x8F;
     return %near_opcodes{$mnemonic.uc};
 }
 
 method get-prefixes($node, %info, %env) {
     my $bin = Buf.new();
     my @ops = $node.operands;
+
+    # アドレスサイズプレフィックス (0x67)
+    if self.needs_67h($node) {
+        $bin.push(0x67);
+    }
+
+    # オペランドサイズプレフィックス (0x66)
+    if self.needs_66h($node, %info) {
+        $bin.push(0x66);
+    }
     
     # セグメントオーバーライドプレフィックス
     for @ops -> $op {
@@ -134,16 +142,6 @@ method get-prefixes($node, %info, %env) {
                 $bin.push(%seg_prefixes{$seg_reg_name});
             }
         }
-    }
-
-    # アドレスサイズプレフィックス (0x67)
-    if self.needs_67h($node) {
-        $bin.push(0x67);
-    }
-    
-    # オペランドサイズプレフィックス (0x66)
-    if self.needs_66h($node, %info) {
-        $bin.push(0x66);
     }
     
     # 0x0F プレフィックス (一部の命令)
@@ -295,10 +293,6 @@ method get-base-opcode($node, %info) {
 method encode-modrm-sib-disp($node, %info, %env) {
     my $type = %info<type> // '';
     my @ops = $node.operands;
-    
-    if %*ENV<RAKUSK_DEBUG> {
-        say "DEBUG: encode-modrm-sib-disp type=$type ops[0]=", @ops[0].^name;
-    }
 
     given $type {
         when 'reg-reg' | 'reg-reg-2' {
@@ -341,7 +335,7 @@ method encode-modrm-sib-disp($node, %info, %env) {
         }
         when 'reg' | 'reg-imm8' | 'reg-imm16' {
             return Buf.new() if %info<base_opcode>;
-            my $reg_field = %info<extension> // 0;
+            my $reg_field = %info<extension> // (@ops[0] ~~ Register ?? @ops[0].index !! 0);
             if @ops[0] ~~ Register {
                 my $rm_field = @ops[0].index;
                 my $modrm = pack-modrm(mod => 3, reg => $reg_field // 0, rm => $rm_field // 0);
@@ -450,7 +444,6 @@ method encode-immediate($node, %info, %env) {
                 if self.output_format.uc eq 'WCOFF' && self.extern_symbols.grep({ $_ eq $name }) {
                     # リロケーションの追加
                     if %env<relocations>.defined {
-                        say "DEBUG: Pushing relocation for ", $name if %*ENV<RAKUSK_DEBUG>;
                         # sym_idx は .file (2) + sections (3*2=6) = 8
                         # その後 EXTERN, GLOBAL の順に並ぶ
                         my $sym_idx = 8;
@@ -475,9 +468,9 @@ method encode-immediate($node, %info, %env) {
                         }
                         my $prefix_count = self.get-prefixes($node, %info, %env).elems;
                         %env<relocations>.push({
-                            offset => %env<PC> + $prefix_count + (%info<opcode>.chars / 2).Int,
-                            sym_idx => $sym_idx,
-                            type => 20 # REL_I386_REL32
+                                offset => %env<PC> + $prefix_count + (%info<opcode>.chars / 2).Int,
+                                sym_idx => $sym_idx,
+                                type => 20 # REL_I386_REL32
                         });
                     }
                     # EXTERN の場合は 0 をベースにする (gosk / nask に合わせる)

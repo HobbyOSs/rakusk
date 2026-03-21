@@ -1,23 +1,30 @@
 # Active Context
 
 ## 現在の焦点
-- **harib17a (asmhead.nas) における命令サイズ計算不一致の修正**
+- **harib17a (asmhead.nas) におけるバイナリ不一致およびサイズ計算乖離の完全解消**
 
 ## 直近のタスク
-- [x] `t/day20_harib17a_asmhead.t` の失敗原因を特定（`CMP BYTE [ES:DI+0x19], 8` 等のエンコードミス）
-- [x] `lib/Rakusk/Pass2/Instruction.rakumod` のエンコードロジック修正（Memory オペランドの適切な ModR/M 生成）
-- [ ] Pass 1 と Pass 2 のサイズ計算の乖離を解消（依然として `expected 400, got 384` となる問題の解決）
-- [ ] テストの再実行とパスの確認
-- [ ] 変更のコミットと Memory Bank の更新
+- [x] `t/day20_harib17a_asmhead.t` のバイナリ不一致原因の特定と修正
+- [x] Pass 1 と Pass 2 のサイズ計算の乖離（`expected 400, got 384`）の解消
+- [x] 負数を含む `pack-le` の挙動修正（ビットマスクの適用）
+- [x] 命令選択ロジック（`Actions.rakumod`）の厳密化
+- [x] Memory Bank の更新
+- [ ] 変更のコミット
 
 ## 最近の変更点
-- **Pass 2 エンコードロジックの改善**: 
-    - `encode-modrm-sib-disp` において、`reg-imm` 形式の命令でもオペランドが `Memory` オブジェクトである場合に `encode_mem_op` を呼び出すように変更。これにより、セグメントオーバーライド伴うメモリ参照のエンコードが正しく行われるようになった。
-    - `get-prefixes` で `$op.^can('seg_override')` を使用して安全にチェックするように修正。
+- **命令選択とエンコードの修正**:
+    - `Actions.rakumod`: `reg-imm` 形式の命令マッチングにおいて、`extension`（グループオペコード）がない場合にメモリオペランドを誤ってマッチさせないようガードを追加。
+    - `Pass2/Instruction.rakumod`: プレフィックスの順序を `0x67` (Address Size) -> `0x66` (Operand Size) の順に修正（nask互換）。
+    - `Pass2/Instruction.rakumod`: `IMUL r16/r32, imm` 等の `extension` を持たない `reg-imm` 形式で、ModR/M の `reg` フィールドにデスティネーションレジスタを正しく設定するように修正。
+- **ユーティリティの改善**:
+    - `Util.rakumod`: `pack-le` において、負数が渡された場合に指定ビット幅で正しくマスク（例: 8bit なら `& 0xff`）するように修正。これにより、負のディスプレースメントやイミディエイトのエンコードが安定。
+- **Pass 1 サイズ計算の同期**:
+    - `Actions.rakumod` での命令選択が Pass 2 と一致したことにより、Pass 1 での見積もりサイズと Pass 2 の実生成サイズが一致。`harib17a` の `expected 400, got 384` 問題が解決。
 
 ## 課題と次のステップ
-- **サイズ不一致の解消**: Pass 1 が `CMP BYTE [ES:DI+d8], imm8` を 2バイト（プレフィックス等を除いた最小サイズ？）と見積もっている可能性が高い。Pass 2 で生成される実際のバイト数（4〜5バイト）と一致させる必要がある。
-- **Pass 1 の `size-of-instruction` の検証**: Pass 1 で `encode-instruction` を呼び出した際、環境変数が正しく渡されているか、シンボル解決の有無がサイズにどう影響しているかを確認する。
+- **全体テストの最終確認**: 大幅な修正（特に命令選択と `pack-le`）を行ったため、他の `harib` テストに副作用がないか確認する。
+- **Git コミット**: 修正内容をコミットする。
 
 ## 得られた知識
-- **命令定義の落とし穴**: `CMP` などの命令で `reg-imm` と定義されていても、構文解析の結果 `Memory` オペランドが渡されるケースがあり、Pass 2 側でそれを考慮した ModR/M 生成が必要になる。
+- **nask のプリフィックス順序**: Address Size プレフィックス (`0x67`) は Operand Size プレフィックス (`0x66`) よりも前に配置される必要がある。
+- **符号付き整数のバイナリ表現**: Raku の `pack` 挙動に依存せず、明示的にビットマスクをかけることで、16/32bit 環境での負数エンコードの互換性を確保できる。
