@@ -5,6 +5,7 @@ use Rakusk::Util;
 unit role Rakusk::Pass2::Instruction;
 
 method encode-instruction($node, %regs, %env) {
+    say "DEBUG: encoding instruction {$node.mnemonic} at PC={%env<PC>}" if %*ENV<RAKUSK_DEBUG>;
     my %info = $node.info;
     my $mnemonic = $node.mnemonic;
     my $type = %info<type> // '';
@@ -126,7 +127,7 @@ method get-prefixes($node, %info, %env) {
     
     # セグメントオーバーライドプレフィックス
     for @ops -> $op {
-        if $op.can('seg_override') && $op.seg_override {
+        if $op.^can('seg_override') && $op.seg_override {
             my $seg_reg_name = $op.seg_override.name;
             my %seg_prefixes = ES => 0x26, CS => 0x2E, SS => 0x36, DS => 0x3E, FS => 0x64, GS => 0x65;
             if %seg_prefixes{$seg_reg_name} {
@@ -295,6 +296,10 @@ method encode-modrm-sib-disp($node, %info, %env) {
     my $type = %info<type> // '';
     my @ops = $node.operands;
     
+    if %*ENV<RAKUSK_DEBUG> {
+        say "DEBUG: encode-modrm-sib-disp type=$type ops[0]=", @ops[0].^name;
+    }
+
     given $type {
         when 'reg-reg' | 'reg-reg-2' {
             my $modrm = pack-modrm(mod => 3, reg => @ops[1].index, rm => @ops[0].index);
@@ -336,10 +341,19 @@ method encode-modrm-sib-disp($node, %info, %env) {
         }
         when 'reg' | 'reg-imm8' | 'reg-imm16' {
             return Buf.new() if %info<base_opcode>;
-            my $reg_field = %info<extension> // @ops[0].index;
-            my $rm_field = @ops[0].index;
-            my $modrm = pack-modrm(mod => 3, reg => $reg_field // 0, rm => $rm_field // 0);
-            return Buf.new($modrm);
+            my $reg_field = %info<extension> // 0;
+            if @ops[0] ~~ Register {
+                my $rm_field = @ops[0].index;
+                my $modrm = pack-modrm(mod => 3, reg => $reg_field // 0, rm => $rm_field // 0);
+                return Buf.new($modrm);
+            } elsif @ops[0] ~~ Memory {
+                my ($mod, $rm, $disp_bytes, $sib, $needs_67) = self.encode_mem_op(@ops[0], %env);
+                my $modrm = pack-modrm(mod => $mod // 0, reg => $reg_field, rm => $rm // 0);
+                my $bin = Buf.new($modrm);
+                $bin ~= $sib if $sib;
+                $bin ~= $disp_bytes if $disp_bytes;
+                return $bin;
+            }
         }
         when 'reg-mem' | 'mem-reg' {
             my $reg_op = @ops.grep(Register)[0];
@@ -353,6 +367,9 @@ method encode-modrm-sib-disp($node, %info, %env) {
         }
         when 'mem-imm8' | 'mem-imm16' | 'mem' | 'mem-far' {
             my $mem_op = @ops.grep(Memory)[0];
+            if %*ENV<RAKUSK_DEBUG> {
+                say "DEBUG: mem_op defined? ", $mem_op.defined;
+            }
             my ($mod, $rm, $disp_bytes, $sib, $needs_67) = self.encode_mem_op($mem_op, %env);
             my $reg_field = %info<extension> // 0;
             # debug "DEBUG: mod=$mod reg=$reg_field rm=$rm" if %*ENV<RAKUSK_DEBUG>;
