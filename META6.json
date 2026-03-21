@@ -1,7 +1,7 @@
 {
   "name": "rakusk",
   "description": "Raku-based x86 assembler for self-hosting OS bootstrap",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "perl": "6.d",
   "authors": [
     "Cline"
