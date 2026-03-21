@@ -96,6 +96,8 @@ grammar Assembler is export {
         | '"' <( [ [ \\ . ] | <-[ " ]> ]* )> '"'
         | "'" <( [ [ \\ . ] | <-[ ' ]> ]* )> "'"
     }
+    token seg_reg { :i [ ES|CS|SS|DS|FS|GS ] <|w> }
+    token seg_prefix { <seg_reg> ':' }
     token reg { :i [ RAX|RBX|RCX|RDX|RSI|RDI|RBP|RSP|R8|R9|R10|R11|R12|R13|R14|R15
             | EAX|EBX|ECX|EDX|ESI|EDI|EBP|ESP
             | AX|BX|CX|DX|SI|DI|BP|SP
@@ -160,6 +162,7 @@ grammar Assembler is export {
 
     rule addressing {
         '['
+            $<seg_override>=<seg_prefix>?
             [ <base=reg> | <disp=exp> ]?
             [
                 <.ws> <[ + \- ]> <.ws>

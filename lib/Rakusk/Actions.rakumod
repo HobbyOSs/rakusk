@@ -284,10 +284,28 @@ class AssemblerActions is export does Rakusk::Util::Evaluator {
                 return $v_width == (self.bit_mode == 16 ?? 16 !! 32);
             }
             when 'reg-imm8' {
-                return False unless @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Immediate;
-                return False if $v<short_reg> && @ops[0].name.uc ne $v<short_reg>.uc;
+                return False unless @ops.elems == 2 && (@ops[0] ~~ Register || @ops[0] ~~ Memory) && @ops[1] ~~ Immediate;
+
                 my $target_width = $v_width || 8;
-                return False if @ops[0].width != $target_width;
+                my $op_width = 0;
+                if @ops[0] ~~ Register {
+                    $op_width = @ops[0].width;
+                } else { # Memory
+                    $op_width = $target_width;
+                    if @ops[0].size_prefix {
+                        given @ops[0].size_prefix {
+                            when 'BYTE' { $op_width = 8 }
+                            when 'WORD' { $op_width = 16 }
+                            when 'DWORD' { $op_width = 32 }
+                        }
+                    }
+                }
+                return False if $op_width != $target_width;
+
+                if @ops[0] ~~ Register {
+                    return False if $v<short_reg> && @ops[0].name.uc ne $v<short_reg>.uc;
+                }
+
                 my $ev = @ops[1].expr.eval({});
                 if $ev ~~ NumberExp {
                     if $target_width == 8 {
@@ -299,12 +317,31 @@ class AssemblerActions is export does Rakusk::Util::Evaluator {
                 return True;
             }
             when 'reg-imm16' {
-                return False unless @ops.elems == 2 && @ops[0] ~~ Register && @ops[1] ~~ Immediate;
-                return False if $v<short_reg> && @ops[0].name.uc ne $v<short_reg>.uc;
-                if $v_width {
-                    return @ops[0].width == $v_width;
+                return False unless @ops.elems == 2 && (@ops[0] ~~ Register || @ops[0] ~~ Memory) && @ops[1] ~~ Immediate;
+                
+                if @ops[0] ~~ Register {
+                    return False if $v<short_reg> && @ops[0].name.uc ne $v<short_reg>.uc;
+                    if $v_width {
+                        return @ops[0].width == $v_width;
+                    }
+                    return @ops[0].width == 16 || @ops[0].width == 32;
+                } else { # Memory
+                    my $op_width = 0;
+                    if @ops[0].size_prefix {
+                        given @ops[0].size_prefix {
+                            when 'WORD' { $op_width = 16 }
+                            when 'DWORD' { $op_width = 32 }
+                            default { return False; }
+                        }
+                    } else {
+                        $op_width = self.bit_mode;
+                    }
+
+                    if $v_width {
+                        return $op_width == $v_width;
+                    }
+                    return True;
                 }
-                return @ops[0].width == 16 || @ops[0].width == 32;
             }
             when 'reg-imm32' {
                 return @ops.elems == 2 && @ops[0] ~~ Register && @ops[0].width == 32 && @ops[1] ~~ Immediate;
@@ -512,36 +549,42 @@ class AssemblerActions is export does Rakusk::Util::Evaluator {
     }
 
     method addressing($/) {
-        my $base;
+        my $mem = Memory.new();
+
+        if $<seg_override> {
+            my $prefix_str = $<seg_override>.Str;
+            my $reg_name = $prefix_str.substr(0, $prefix_str.chars - 1).uc;
+            my $reg_info = %Rakusk::Util::REGS_DATA{$reg_name};
+            $mem.seg_override = Register.new(
+                name => $reg_name,
+                width => $reg_info<width>,
+                index => $reg_info<index>,
+                type => $reg_info<type> // 'segment'
+            );
+        }
+
         if $<base> {
-            $base = $<base>.made;
+            $mem.base = $<base>.made;
         }
 
-        my $index;
-        my $scale = 1;
-        my $disp = 0;
+        my @indices = $<index>».made;
+        my @disps = $<disp>».made;
 
-        for $/.caps -> $cap {
-            if $cap.key eq 'index' {
-                $index = Register.new(name => $cap.value.Str.uc);
-            } elsif $cap.key eq 'scale' {
-                $scale = $cap.value.Int;
-            } elsif $cap.key eq 'disp' {
-                $disp = $cap.value.made;
-            }
-        }
-        
-        my $mem = Memory.new(base => $base);
-        if $<index> {
-            $mem.index = $<index>[0].made;
-            $mem.scale = $<scale>[0].Int if $<scale>;
-        }
-        if $<disp> {
-            $mem.disp = $<disp>[0].made;
-        } else {
-            $mem.disp = NumberExp.new(value => 0);
+        if @indices.elems > 0 {
+            $mem.index = @indices[0];
+            $mem.scale = $<scale>[0].Int if $<scale> && $<scale>[0];
         }
 
+        if @disps.elems > 0 {
+             if $mem.base {
+                $mem.disp = @disps[0];
+             } else {
+                if !$<base> && $<disp> {
+                    $mem.disp = $<disp>[0].made;
+                }
+             }
+        }
+        $mem.disp //= NumberExp.new(value => 0);
         make $mem;
     }
 

@@ -1,7 +1,7 @@
 use v6;
 
 sub MAIN(Str $nas_file, Str $test_name) {
-    my $nas_content = $nas_file.IO.slurp(:bin).decode('latin1');
+    my $nas_content = $nas_file.IO.slurp(:bin).decode('utf8');
     my $bin_file = "$test_name.bin";
     my $lst_file = "$test_name.lst";
     

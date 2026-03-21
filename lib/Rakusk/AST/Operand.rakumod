@@ -40,9 +40,11 @@ class Memory does Operand is export {
     has $.scale is rw = 1;    # Int
     has $.disp is rw = 0;     # Expression
     has $.size_prefix is rw;  # BYTE, WORD, DWORD etc.
+    has $.seg_override is rw; # Register
 
     method Str {
         my $s = $!size_prefix ?? $!size_prefix ~ " " !! "";
+        $s ~= $!seg_override.Str ~ ":" if $!seg_override;
         $s ~= "[";
         $s ~= $!base.Str if $!base;
         if $!index {

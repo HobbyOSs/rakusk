@@ -124,6 +124,17 @@ method get-prefixes($node, %info, %env) {
     my $bin = Buf.new();
     my @ops = $node.operands;
     
+    # セグメントオーバーライドプレフィックス
+    for @ops -> $op {
+        if $op ~~ Memory && $op.seg_override {
+            my $seg_reg_name = $op.seg_override.name;
+            my %seg_prefixes = ES => 0x26, CS => 0x2E, SS => 0x36, DS => 0x3E, FS => 0x64, GS => 0x65;
+            if %seg_prefixes{$seg_reg_name} {
+                $bin.push(%seg_prefixes{$seg_reg_name});
+            }
+        }
+    }
+
     # アドレスサイズプレフィックス (0x67)
     if self.needs_67h($node) {
         $bin.push(0x67);
