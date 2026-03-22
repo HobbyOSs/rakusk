@@ -53,6 +53,8 @@
   "SYSEXIT": { "type": "no-op", "opcode": "35" },
   "UD2": { "type": "no-op", "opcode": "0B" },
   "WAIT": { "type": "no-op", "opcode": "9B" },
+  "FNSAVE": { "type": "mem", "opcode": "DD", "extension": 6 },
+  "FRSTOR": { "type": "mem", "opcode": "DD", "extension": 4 },
   "WBINVD": { "type": "no-op", "opcode": "09" },
   "WRMSR": { "type": "no-op", "opcode": "30" },
   "MOV": { "type": "reg-imm8", "base_opcode": "B0" },
