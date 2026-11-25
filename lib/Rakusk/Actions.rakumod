@@ -237,6 +237,9 @@ class AssemblerActions is export does Rakusk::Util::Evaluator {
             when 'reg-reg' {
                 return False unless @ops.elems == 2;
                 return False unless @ops[0] ~~ Register && @ops[1] ~~ Register;
+                if $v_width != 0 {
+                    return False unless @ops[0].width == $v_width || @ops[1].width == $v_width;
+                }
                 return (@ops[0].width == @ops[1].width || (@ops[0].width == 16 && @ops[1].width == 32) || (@ops[0].width == 32 && @ops[1].width == 16))
                 && !@ops[0].is-segment && !@ops[1].is-segment
                 && !@ops[0].is-control && !@ops[1].is-control;
