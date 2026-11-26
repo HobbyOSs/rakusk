@@ -590,7 +590,7 @@ method encode_mem_op_32($mem, %env) {
         }
     } else {
         $rm = 4;
-        my $ss = 0; # scale 1
+        my $ss = $mem.scale == 2 ?? 1 !! $mem.scale == 4 ?? 2 !! $mem.scale == 8 ?? 3 !! 0;
         my $index_idx = $index_reg.index;
         my $base_idx = $base_reg ?? $base_reg.index !! 5; # 5 means no base if mod=0
         $sib.push(($ss +< 6) +| ($index_idx +< 3) +| $base_idx);

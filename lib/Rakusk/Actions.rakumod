@@ -587,13 +587,33 @@ class AssemblerActions is export does Rakusk::Util::Evaluator {
         }
 
         if @disps.elems > 0 {
-             if $mem.base {
-                $mem.disp = @disps[0];
-             } else {
-                if !$<base> && $<disp> {
-                    $mem.disp = $<disp>[0].made;
+            # 各 disp の直前にある符号 (+ / -) を元の文字列から拾い、
+            # 符号付きの和として1つの式にまとめる。
+            # 以前は符号が捨てられ、複数の disp も先頭しか使われなかった。
+            my @signed;
+            for $<disp>.list -> $d {
+                my $sign = '+';
+                my $p = $d.from - 1;
+                while $p > 0 && $/.orig.substr($p, 1) ~~ /\s/ { $p-- }
+                $sign = '-' if $/.orig.substr($p, 1) eq '-';
+                @signed.push(($sign, $d.made));
+            }
+            if @signed.elems == 1 && @signed[0][0] eq '+' {
+                $mem.disp = @signed[0][1];
+            } else {
+                my ($s0, $e0) = @signed[0];
+                my $head = $s0 eq '+' ?? $e0 !! NumberExp.new(value => 0);
+                my @ops;
+                my @tails;
+                if $s0 eq '-' { @ops.push('-'); @tails.push($e0); }
+                for @signed[1..*] -> ($sgn, $e) {
+                    @ops.push($sgn);
+                    @tails.push($e);
                 }
-             }
+                $mem.disp = @ops.elems
+                    ?? AddExp.new(head => $head, operators => @ops, tails => @tails)
+                    !! $head;
+            }
         }
         $mem.disp //= NumberExp.new(value => 0);
         make $mem;
